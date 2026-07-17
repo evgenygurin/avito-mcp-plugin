@@ -14,7 +14,12 @@ async def test_ping_tool_works() -> None:
 async def test_expected_tools_are_registered() -> None:
     async with Client(mcp) as client:
         names = {t.name for t in await client.list_tools()}
-    assert {"ping", "official_api_call"} <= names
+    assert {
+        "ping",
+        "official_api_call",
+        "get_own_items",
+        "get_account_info",
+    } <= names
 
 
 async def test_skills_served_via_server() -> None:
