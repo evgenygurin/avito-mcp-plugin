@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Финализированы все 4 скила (Этап 2) по методологии `writing-skills`: убран
+  статус «черновик», описания приведены к формату WHEN-триггеров, добавлены
+  таблицы отвергаемых аргументов и Red Flags (`avito-legal-guardrails`),
+  discipline-блок про капчу (`scraping-avito`), реальные примеры вызова
+  `official_api_call`. Wiki-ссылки `[[…]]` заменены на markdown-ссылки.
+- RED-baseline и verify проведены на субагентах; скилы позиционированы как
+  reference-guardrails для переносимости.
+
 ### Added
 
 - Доменные Pydantic-модели: `Listing`, `SearchQuery`, `SearchResult`.

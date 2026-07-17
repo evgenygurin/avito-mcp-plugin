@@ -1,13 +1,9 @@
 ---
 name: using-avito-mcp
-description: Use when the user needs Avito data — listings, prices, seller info, item details, or official-API actions. Routes work to the avito MCP server tools instead of hand-written HTTP requests or ad-hoc scraping scripts.
+description: Use when the user needs Avito data — listings, prices, item characteristics, or actions on their OWN listings — or when you are about to hand-write HTTP requests or ad-hoc scraping scripts for Avito. Points to the right avito MCP tool or sub-skill.
 ---
 
 # Using the Avito MCP tools
-
-> **СТАТУС: черновик-заготовка (skeleton).** Финальный текст пишется по
-> `superpowers:writing-skills` (RED→GREEN→REFACTOR с прогонами на субагентах)
-> после реализации MCP-тулз. Сигнатуры тулз ниже — плановые, не финальные.
 
 ## Overview
 
@@ -17,40 +13,42 @@ description: Use when the user needs Avito data — listings, prices, seller inf
 
 ## When to Use
 
-- Пользователь просит найти/сравнить объявления, цены, характеристики на Avito.
-- Нужны детали конкретного объявления по URL или id.
-- Нужны действия над **своими** объявлениями (официальный API) — см.
-  [[avito-official-api]].
-- Идёт массовый сбор публичных данных → сперва прочитай [[scraping-avito]]
-  (антибот) и [[avito-legal-guardrails]] (право).
+- Нужны действия над **своими** объявлениями (официальный API) → [avito-official-api](../avito-official-api/SKILL.md).
+- Пользователь просит найти/сравнить объявления, цены, характеристики (парсинг —
+  в разработке; сперва [scraping-avito](../scraping-avito/SKILL.md) и [avito-legal-guardrails](../avito-legal-guardrails/SKILL.md)).
 
 **Не используй**, когда данные не с Avito или задача чисто локальная.
 
-## Quick Reference (плановые тулзы)
+## Tools
 
 | Тулза | Назначение | Статус |
 |---|---|---|
-| `search_listings(query, region, filters)` | Поиск объявлений | TODO |
-| `get_listing(id_or_url)` | Детали объявления | TODO |
-| `official_api_call(method, params)` | Официальный API (свои объявления) | TODO |
-| `check_proxy_health()` | Диагностика прокси-пула | TODO |
+| `ping(message)` | Диагностика связи с сервером | ✅ готово |
+| `official_api_call(method, path, params)` | Официальный API (свои объявления) | ✅ готово |
+| `search_listings(query, region, filters)` | Поиск объявлений | 🔜 план |
+| `get_listing(id_or_url)` | Детали объявления | 🔜 план |
+| `check_proxy_health()` | Диагностика прокси-пула | 🔜 план |
 
-Точный список и параметры — после реализации сервера; см. `docs/mcp-server.md`.
+Актуальный список и параметры — `docs/mcp-server.md`.
 
 ## Implementation
 
-<!-- TODO: заполнить после реализации тулз в server/src/avito_mcp_server/tools/.
-     Для каждой тулзы: когда вызывать, какие параметры, что возвращает,
-     как обрабатывать блокировки/капчу (делегировать в scraping-avito). -->
+- **Свои объявления / реклама / статистика** → `official_api_call`
+  (детали и env-секреты — [avito-official-api](../avito-official-api/SKILL.md)).
+- **Чужие публичные объявления** (поиск, детали) → парсинг-тулзы в разработке.
+  Пока их нет — не подменяй их ручным `curl_cffi`/Playwright; объясни, что тулза
+  ещё не реализована. Процедура и ограничения — [scraping-avito](../scraping-avito/SKILL.md).
+- **Блокировки в ответе** (`429`, `firewallCaptcha`) → не решай капчу, делегируй
+  логику ретрая с ротацией слою парсинга; см. [scraping-avito](../scraping-avito/SKILL.md).
 
 ## Common Mistakes
 
 - Писать `curl_cffi`/Playwright руками вместо вызова тулзы.
-- Собирать телефоны/имена продавцов — сначала [[avito-legal-guardrails]].
+- Собирать телефоны/имена продавцов — сначала [avito-legal-guardrails](../avito-legal-guardrails/SKILL.md).
 - Игнорировать `429`/`firewallCaptcha` в ответе тулзы вместо ретрая с ротацией.
 
 ## Related
 
-- [[scraping-avito]] — процедура обхода антибота
-- [[avito-legal-guardrails]] — правовые ограничения РФ
-- [[avito-official-api]] — официальный API для своих объявлений
+- [scraping-avito](../scraping-avito/SKILL.md) — процедура обхода антибота
+- [avito-legal-guardrails](../avito-legal-guardrails/SKILL.md) — правовые ограничения РФ
+- [avito-official-api](../avito-official-api/SKILL.md) — официальный API для своих объявлений
