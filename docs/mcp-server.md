@@ -99,11 +99,17 @@ async def test_ping():
 { "command": "uvx", "args": ["avito-mcp-server"] } // PyPI
 ```
 
-## Раздача skills по MCP (опционально)
+## Раздача skills по MCP
 
-FastMCP v3 `SkillsProvider` умеет выставлять директорию `skills/` как
-MCP-ресурсы (`skill://`), чтобы те же `SKILL.md` получал любой MCP-клиент
-(SEP-2640). Фича молодая — рассматривать как дополнение, не единственный канал.
+Сервер раздаёт каталог `skills/` как MCP-ресурсы (`skill://<name>/SKILL.md` и
+`skill://<name>/_manifest`) через FastMCP `SkillsProvider` — любой MCP-клиент
+получает те же `SKILL.md` через `list_resources` / `read_resource`.
+
+Реализация — [`skills_provider.py`](../server/src/avito_mcp_server/skills_provider.py):
+`register_skills(mcp)` разрешает путь из `AVITO_SKILLS_DIR` →
+`${CLAUDE_PLUGIN_ROOT}/skills` → каталог репозитория; при отсутствии каталога
+сервер работает без раздачи (graceful). Caveat: не все клиенты авто-подхватывают
+skill-ресурсы — это дополнение к нативному skill-discovery, не единственный канал.
 
 ## Дальше
 

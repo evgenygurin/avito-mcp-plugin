@@ -58,8 +58,13 @@ MCP-сервер стартует автоматически (см. [`.mcp.json`
 
 ### Другие агенты
 
-Конфигурация MCP-сервера для Cursor, Codex, Gemini CLI и др. —
-[`docs/portability.md`](docs/portability.md).
+Готовые конфиги MCP-сервера для Cursor / Codex / Gemini CLI / VS Code —
+[`examples/mcp-configs/`](examples/mcp-configs/); тонкие адаптеры —
+[`.cursor-plugin/`](.cursor-plugin/plugin.json) и [`.codex/INSTALL.md`](.codex/INSTALL.md).
+Форматы и нюансы — [`docs/portability.md`](docs/portability.md).
+
+Сервер также **раздаёт skills по MCP** (`skill://<name>/SKILL.md`) — любой
+MCP-клиент получает их через `list_resources`/`read_resource`.
 
 ## Документация
 

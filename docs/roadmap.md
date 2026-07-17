@@ -55,9 +55,13 @@ Recommendations
 
 ## Этап 4 — переносимость
 
-- [ ] Проверить подключение к Cursor / Codex / Gemini CLI (см. [`portability.md`](portability.md))
-- [ ] Опционально: тонкие адаптеры `.cursor-plugin/`, `.codex-plugin/`
-- [ ] Опционально: `SkillsProvider` в сервере (раздача skills по MCP)
+- [x] Готовые конфиги MCP для Cursor/Codex/Gemini/VS Code —
+      [`examples/mcp-configs/`](../examples/mcp-configs/) (валидированы JSON/TOML)
+- [x] Тонкие адаптеры: [`.cursor-plugin/plugin.json`](../.cursor-plugin/plugin.json),
+      [`.codex/INSTALL.md`](../.codex/INSTALL.md)
+- [x] `SkillsProvider` в сервере: раздача `skills/` по MCP (`skill://<name>/…`),
+      проверено end-to-end через stdio (8 ресурсов); 32 теста
+- [ ] Живая проверка подключения к Cursor/Codex/Gemini (нужны сами агенты)
 
 ## Этап 5 — CI/CD и публикация
 

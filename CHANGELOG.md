@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Added (Этап 4 — переносимость)
+
+- Раздача `skills/` по MCP через `SkillsProvider` (`skill://<name>/SKILL.md`);
+  модуль `skills_provider.py` с graceful-резолвом пути (`AVITO_SKILLS_DIR` →
+  `${CLAUDE_PLUGIN_ROOT}/skills` → каталог репозитория).
+- Готовые конфиги MCP-сервера для Cursor/Codex/Gemini/VS Code в
+  `examples/mcp-configs/`.
+- Тонкие адаптеры: `.cursor-plugin/plugin.json`, `.codex/INSTALL.md`.
+
 ### Changed
 
 - Финализированы все 4 скила (Этап 2) по методологии `writing-skills`: убран

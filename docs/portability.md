@@ -44,6 +44,16 @@ LOG_LEVEL = "info"
 SSE устарел — для remote используй streamable HTTP. Codex не умеет streamable
 HTTP напрямую → нужен `mcp-proxy` как мост stdio↔HTTP.
 
+## Готовые конфиги
+
+Не пиши конфиг вручную — возьми готовый из [`examples/mcp-configs/`](../examples/mcp-configs/):
+[`cursor.json`](../examples/mcp-configs/cursor.json),
+[`gemini.json`](../examples/mcp-configs/gemini.json),
+[`vscode.json`](../examples/mcp-configs/vscode.json),
+[`codex.toml`](../examples/mcp-configs/codex.toml). Все запускают сервер через
+`uvx` из git (без клонирования); после публикации в PyPI — просто
+`uvx avito-mcp-server`.
+
 ## Перенос skills
 
 `SKILL.md` по открытому стандарту подхватывают Claude Code, Codex, Cursor,
@@ -61,13 +71,18 @@ Gemini CLI, VS Code/Copilot, Goose, Kiro, Amp, Roo Code, Windsurf, Cline и др
 ## Тонкие адаптеры
 
 По образцу superpowers переносимость усиливают тонкие адаптеры под каждый
-harness: `.cursor-plugin/`, `.codex-plugin/`, `AGENTS.md`, `GEMINI.md`,
-`gemini-extension.json`. В этом репозитории уже есть `AGENTS.md`, `GEMINI.md` и
-`gemini-extension.json`; адаптеры Cursor/Codex — по мере необходимости.
+harness. В этом репозитории:
+
+- [`.cursor-plugin/plugin.json`](../.cursor-plugin/plugin.json) — манифест для Cursor (skills);
+- [`.codex/INSTALL.md`](../.codex/INSTALL.md) — инструкция установки для Codex (skills + MCP);
+- `AGENTS.md`, `GEMINI.md`, `gemini-extension.json` — общие адаптеры.
 
 ## Раздача skills по MCP
 
-FastMCP v3 `SkillsProvider` может выставлять `skills/` как MCP-ресурсы
-(`skill://`, SEP-2640), чтобы те же файлы получал любой MCP-клиент. Фича молодая —
-не все клиенты авто-подхватывают; рассматривать как дополнение. Подробнее —
+MCP-сервер `avito` раздаёт `skills/` как MCP-ресурсы (`skill://<name>/SKILL.md`,
+FastMCP `SkillsProvider`) — любой MCP-клиент получает те же файлы через
+`list_resources` / `read_resource`, поверх любого конфига выше. Путь к `skills/`
+берётся из `${CLAUDE_PLUGIN_ROOT}` (или `AVITO_SKILLS_DIR`); если каталог не
+найден — сервер работает без раздачи. Caveat: не все клиенты авто-подхватывают
+skill-ресурсы — это дополнение к нативному skill-discovery. Подробнее —
 [`mcp-server.md`](mcp-server.md).
