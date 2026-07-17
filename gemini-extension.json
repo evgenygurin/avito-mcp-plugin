@@ -2,5 +2,18 @@
   "name": "avito-mcp-plugin",
   "description": "Skills + MCP-сервер (FastMCP v3) для работы с Avito: парсинг, официальный API, правовые guardrails",
   "version": "0.1.0",
-  "contextFileName": "GEMINI.md"
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "avito": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/evgenygurin/avito-mcp-plugin.git#subdirectory=server",
+        "avito-mcp-server"
+      ],
+      "env": {
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
 }

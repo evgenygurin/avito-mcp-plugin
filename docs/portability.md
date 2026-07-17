@@ -75,7 +75,9 @@ harness. В этом репозитории:
 
 - [`.cursor-plugin/plugin.json`](../.cursor-plugin/plugin.json) — манифест для Cursor (skills);
 - [`.codex/INSTALL.md`](../.codex/INSTALL.md) — инструкция установки для Codex (skills + MCP);
-- `AGENTS.md`, `GEMINI.md`, `gemini-extension.json` — общие адаптеры.
+- `gemini-extension.json` — расширение Gemini CLI: `GEMINI.md`-контекст **и**
+  MCP-сервер `avito` (блок `mcpServers`) в один шаг;
+- `AGENTS.md`, `GEMINI.md` — общие файлы инструкций.
 
 ## Раздача skills по MCP
 
