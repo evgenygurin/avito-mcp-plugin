@@ -1,0 +1,29 @@
+[project]
+name = "avito-mcp-server"
+version = "0.1.0"
+description = "MCP-сервер (FastMCP v3) для работы с Avito: парсинг, официальный API"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "evgenygurin", email = "e.a.gurin@outlook.com" }]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+]
+
+[project.scripts]
+avito-mcp-server = "avito_mcp_server.server:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

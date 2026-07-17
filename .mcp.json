@@ -1,0 +1,14 @@
+{
+  "avito": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--project",
+      "${CLAUDE_PLUGIN_ROOT}/server",
+      "avito-mcp-server"
+    ],
+    "env": {
+      "LOG_LEVEL": "info"
+    }
+  }
+}
