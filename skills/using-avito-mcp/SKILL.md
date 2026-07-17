@@ -24,7 +24,9 @@ description: Use when the user needs Avito data — listings, prices, item chara
 | Тулза | Назначение | Статус |
 |---|---|---|
 | `ping(message)` | Диагностика связи с сервером | ✅ готово |
-| `official_api_call(method, path, params)` | Официальный API (свои объявления) | ✅ готово |
+| `get_own_items()` | Список своих объявлений (structured) | ✅ готово |
+| `get_account_info()` | Свой аккаунт: user_id + имя (без ПДн) | ✅ готово |
+| `official_api_call(method, path, params)` | Официальный API (свои объявления), сырой JSON | ✅ готово |
 | `search_listings(query, region, filters)` | Поиск объявлений | 🔜 план |
 | `get_listing(id_or_url)` | Детали объявления | 🔜 план |
 | `check_proxy_health()` | Диагностика прокси-пула | 🔜 план |
@@ -33,8 +35,9 @@ description: Use when the user needs Avito data — listings, prices, item chara
 
 ## Implementation
 
-- **Свои объявления / реклама / статистика** → `official_api_call`
-  (детали и env-секреты — [avito-official-api](../avito-official-api/SKILL.md)).
+- **Свои объявления** → `get_own_items` (готовый structured-список); **свой user_id /
+  кабинет** → `get_account_info`. Прочие методы API (реклама, статистика, мессенджер) →
+  `official_api_call` (детали и env-секреты — [avito-official-api](../avito-official-api/SKILL.md)).
 - **Чужие публичные объявления** (поиск, детали) → парсинг-тулзы в разработке.
   Пока их нет — не подменяй их ручным `curl_cffi`/Playwright; объясни, что тулза
   ещё не реализована. Процедура и ограничения — [scraping-avito](../scraping-avito/SKILL.md).

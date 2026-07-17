@@ -8,10 +8,13 @@
 для работы с Avito. Архитектура — «толстое ядро + тонкие адаптеры». Полный
 контекст: [`docs/architecture.md`](docs/architecture.md).
 
-**Стадия — v0.1.0.** Реализованы: тулзы `ping` и `official_api_call`, OAuth2-клиент
-официального API, доменные модели, утилита `extract_listing_id`, раздача `skills/`
-по MCP (`SkillsProvider`) — 32 теста, ruff + mypy чисты. **Не написаны** только
-парсинг-тулзы (`search_listings`, `get_listing`, `check_proxy_health`).
+**Стадия — v0.1.0.** Реализованы: тулзы `ping`, `official_api_call`, `get_own_items`,
+`get_account_info` (4 шт.), OAuth2-клиент официального API с allowlist эндпоинтов,
+доменные модели (`OwnItem`/`OwnItemsResult`/`AccountInfo` — задействованы тулзами;
+`Listing`/`SearchQuery`/`SearchResult` — заготовка под парсинг), утилита
+`extract_listing_id`, раздача `skills/` по MCP (`SkillsProvider`) — 52 теста,
+ruff + mypy чисты. **Не написаны** только парсинг-тулзы (`search_listings`,
+`get_listing`, `check_proxy_health`).
 Статус скилов — в [`docs/skills.md`](docs/skills.md); план — в [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Guardrails (обязательно)
@@ -79,16 +82,18 @@ CI пока нет.
 `fastmcp>=3,<4`, `httpx>=0.27`.
 
 Модули `server/src/avito_mcp_server/`: `server.py` (инстанс + `main()` + регистрация),
-`models.py` (Pydantic-модели — заготовка под listings, **тулзами пока не используются**),
-`utils.py`, `official_api.py` (OAuth2-клиент, инъекция `httpx.AsyncClient`),
-`skills_provider.py`, `tools/official_api.py`.
+`models.py` (Pydantic-модели: `OwnItem`/`OwnItemsResult`/`AccountInfo` используются
+тулзами `own_items`; `Listing`/`SearchQuery`/`SearchResult` — заготовка под парсинг),
+`utils.py`, `official_api.py` (OAuth2-клиент + `validate_endpoint` allowlist,
+инъекция `httpx.AsyncClient`), `skills_provider.py`, `tools/official_api.py`,
+`tools/own_items.py` (типобезопасные тулзы своего кабинета).
 
 - **Паттерн расширения:** новая группа тулз — модуль `tools/<name>.py` с функцией
   `register(mcp)`, которую `server.py` вызывает явно. Не только `@mcp.tool` в `server.py`.
 - Тулзы: `async def`, `Context` для логов/прогресса, docstring = «что делает + когда
   вызывать». Возврат — Pydantic-модель (structured output) **или** `dict[str, Any]`
   для сырого JSON API (как `official_api_call`). Ошибки наружу — через `ToolError`.
-- < 20 тулз на сервер (иначе падает точность выбора моделью). Сейчас их 2.
+- < 20 тулз на сервер (иначе падает точность выбора моделью). Сейчас их 4.
 
 **Тесты** (`server/tests/`, `asyncio_mode="auto"` → async-тесты без декоратора):
 in-memory `Client(mcp)`; сетевая граница мокается через `httpx.MockTransport`
@@ -152,10 +157,15 @@ SemVer синхронно в **пяти** манифестах: `.claude-plugin/
 - **`LOG_LEVEL` мёртвая** — объявлена в `.env.example`, но сервер её не читает.
 - **`AVITO_SKILLS_DIR`**: если путь задан, но не каталог → раздача skills молча
   отключается (fallback на `CLAUDE_PLUGIN_ROOT` **не** срабатывает при override).
-- **`models.py`** реализованы и покрыты тестами, но ни одной тулзой не используются
-  (заготовка под listings).
-- **`official_api_call`** не ограничивает `method`/`path` — guardrail «только свои
-  объявления» держится на docstring, не на коде.
+- **`models.py`**: `OwnItem`/`OwnItemsResult`/`AccountInfo` используются тулзами
+  `own_items`; `Listing`/`SearchQuery`/`SearchResult` пока заготовка под парсинг.
+- **Allowlist эндпоинтов**: `validate_endpoint` (в `official_api.py`) ограничивает
+  `method` и неймспейс `path` (`core/`, `stats/`, `messenger/`, …); ловит чужой хост,
+  path traversal, опечатку в неймспейсе. Применяется в `AvitoOfficialClient.call`,
+  т.е. и к `official_api_call`, и к типобезопасным тулзам. Это НЕ замена legal-guardrails
+  (официальный API и так не отдаёт чужие данные), а защита от грубых ошибок.
+- **`get_account_info`** намеренно не возвращает email/phone (минимизация ПДн по 152-ФЗ),
+  даже если API их прислал — модель `AccountInfo` с `extra="ignore"`.
 - **Токен официального API** кэшируется без учёта `expires_in`; смягчено тем, что
   тулза создаёт новый клиент на каждый вызов и закрывает его в `finally`.
 - **Локальная установка плагина** (`claude plugin marketplace add <локальный путь>`)

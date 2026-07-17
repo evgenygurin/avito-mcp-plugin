@@ -11,8 +11,18 @@ description: Use when working with a user's OWN Avito listings, ads, statistics,
 данными** (объявления, реклама, статистика, мессенджер, Автотека). Массовый сбор
 чужих объявлений им невозможен — для этого см. [scraping-avito](../scraping-avito/SKILL.md).
 
-В плагине доступ идёт через MCP-тулзу **`official_api_call`** (сервер `avito`).
-Не пиши HTTP-запросы к `api.avito.ru` руками — вызывай тулзу.
+В плагине доступ идёт через MCP-тулзы сервера `avito`. Для частых задач есть
+**типобезопасные тулзы** (structured output), для остального — «сырая»
+**`official_api_call`**. Не пиши HTTP-запросы к `api.avito.ru` руками — вызывай тулзу.
+
+| Задача | Тулза |
+|---|---|
+| Список своих объявлений | `get_own_items` → `{items: [...], count}` |
+| Свой аккаунт / user_id | `get_account_info` → `{id, name}` (без ПДн) |
+| Любой другой метод API | `official_api_call(method, path, params)` → сырой JSON |
+
+Пути в `official_api_call` ограничены allowlist'ом неймспейсов своих данных
+(`core/`, `stats/`, `messenger/`, …) — чужой хост/путь вернёт ошибку.
 
 ## When to Use
 

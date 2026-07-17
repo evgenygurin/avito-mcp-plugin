@@ -19,7 +19,10 @@ Recommendations
 - [x] Утилиты (`extract_listing_id`)
 - [x] Клиент официального API (OAuth2 `client_credentials`, инъекция HTTP-клиента)
 - [x] Тулза `official_api_call` с обработкой ошибок через `ToolError`
-- [x] In-memory тесты (`Client(mcp)`) + `httpx.MockTransport` — 26 тестов, ruff + mypy чисты
+- [x] Типобезопасные тулзы своего кабинета: `get_own_items`, `get_account_info`
+      (structured output — `OwnItemsResult`/`AccountInfo`); allowlist эндпоинтов
+      (`validate_endpoint`) — guardrail в коде, не только в docstring
+- [x] In-memory тесты (`Client(mcp)`) + `httpx.MockTransport` — 52 теста, ruff + mypy чисты
 - [ ] Парсинг-тулзы (`search_listings`, `get_listing`) — слой обхода антибота
       (браузер + прокси), **без** «лобового» обхода капчи
 - [ ] `lifespan` под пул соединений (когда появится БД/Redis)

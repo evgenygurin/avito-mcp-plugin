@@ -12,7 +12,7 @@ from fastmcp import FastMCP
 from pydantic import BaseModel
 
 from .skills_provider import register_skills
-from .tools import official_api
+from .tools import official_api, own_items
 
 mcp = FastMCP("avito-mcp-server")
 
@@ -34,6 +34,7 @@ async def ping(message: str = "ping") -> Pong:
 
 
 official_api.register(mcp)
+own_items.register(mcp)
 
 # Раздача skills/ по MCP (skill://<name>/…) — любому MCP-клиенту.
 # graceful: если каталог skills/ не найден, сервер работает без раздачи.

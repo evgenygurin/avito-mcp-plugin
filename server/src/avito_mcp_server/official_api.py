@@ -15,6 +15,42 @@ from pydantic import BaseModel
 
 TOKEN_PATH = "/token/"
 
+# Разрешённые методы и неймспейсы официального API — только «свои данные».
+# API by-design не отдаёт чужие объявления; allowlist ловит грубые ошибки
+# (чужой хост, path traversal, опечатка в неймспейсе), а не подменяет legal-guardrails.
+ALLOWED_METHODS = frozenset({"GET", "POST", "PUT", "DELETE"})
+ALLOWED_NAMESPACES = (
+    "core/",
+    "stats/",
+    "messenger/",
+    "autoload/",
+    "job/",
+    "cpxpromo/",
+    "ratings/",
+    "autoteka/",
+    "short-term-rent/",
+)
+
+
+def validate_endpoint(method: str, path: str) -> None:
+    """Проверить, что вызов идёт к разрешённому неймспейсу своих данных.
+
+    Guardrail «только свои объявления/кабинет» в коде, а не только в docstring.
+
+    Raises:
+        ValueError: при неподдерживаемом методе, абсолютном/чужом URL,
+            path traversal или неизвестном неймспейсе.
+    """
+    if method.upper() not in ALLOWED_METHODS:
+        raise ValueError(f"метод {method!r} не разрешён")
+    if "://" in path:
+        raise ValueError("абсолютный URL запрещён — передавай только путь API")
+    normalized = path.strip().lstrip("/")
+    if ".." in normalized.split("/"):
+        raise ValueError("path traversal запрещён")
+    if not normalized.startswith(ALLOWED_NAMESPACES):
+        raise ValueError(f"путь {path!r} вне разрешённых неймспейсов официального API")
+
 
 class AvitoOfficialConfig(BaseModel):
     """Конфигурация доступа к официальному API."""
@@ -70,7 +106,11 @@ class AvitoOfficialClient:
         path: str,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Вызвать метод API с Bearer-токеном. Возвращает разобранный JSON."""
+        """Вызвать метод API с Bearer-токеном. Возвращает разобранный JSON.
+
+        Путь валидируется через ``validate_endpoint`` до сети (ValueError при запрете).
+        """
+        validate_endpoint(method, path)
         token = await self.get_token()
         url = f"{self._config.base_url}/{path.lstrip('/')}"
         resp = await self._http.request(
