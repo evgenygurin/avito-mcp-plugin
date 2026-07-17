@@ -11,6 +11,8 @@ from __future__ import annotations
 from fastmcp import FastMCP
 from pydantic import BaseModel
 
+from .tools import official_api
+
 mcp = FastMCP("avito-mcp-server")
 
 
@@ -30,10 +32,10 @@ async def ping(message: str = "ping") -> Pong:
     return Pong(message=message, length=len(message))
 
 
-# TODO: зарегистрировать доменные тулзы, например:
-#   from .tools import listings, official_api
-#   listings.register(mcp)
-#   official_api.register(mcp)
+official_api.register(mcp)
+
+# TODO: зарегистрировать парсинг-тулзы (listings) после реализации слоя обхода
+# антибота — см. skills/scraping-avito и docs/avito-scraping.md.
 
 
 def main() -> None:
