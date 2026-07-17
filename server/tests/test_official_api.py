@@ -5,7 +5,11 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from avito_mcp_server.official_api import AvitoOfficialClient, AvitoOfficialConfig
+from avito_mcp_server.official_api import (
+    AvitoOfficialClient,
+    AvitoOfficialConfig,
+    validate_endpoint,
+)
 
 
 def make_client(
@@ -74,6 +78,38 @@ class TestCall:
 
         with pytest.raises(httpx.HTTPStatusError):
             await make_client(handler).call("GET", "core/v1/items")
+
+    async def test_rejects_disallowed_endpoint_before_network(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/token/":
+                return httpx.Response(200, json={"access_token": "TOKEN"})
+            raise AssertionError("сеть не должна вызываться при запрете эндпоинта")
+
+        with pytest.raises(ValueError):
+            await make_client(handler).call("GET", "evil/v1/steal")
+
+
+class TestValidateEndpoint:
+    def test_allows_own_data_namespace(self) -> None:
+        validate_endpoint("GET", "core/v1/items")
+        validate_endpoint("GET", "/core/v1/accounts/self")
+        validate_endpoint("POST", "messenger/v1/accounts/1/chats")
+
+    def test_rejects_unknown_namespace(self) -> None:
+        with pytest.raises(ValueError):
+            validate_endpoint("GET", "search/v1/items")
+
+    def test_rejects_absolute_url(self) -> None:
+        with pytest.raises(ValueError):
+            validate_endpoint("GET", "https://evil.example/core/v1/items")
+
+    def test_rejects_path_traversal(self) -> None:
+        with pytest.raises(ValueError):
+            validate_endpoint("GET", "core/v1/../../secret")
+
+    def test_rejects_unsupported_method(self) -> None:
+        with pytest.raises(ValueError):
+            validate_endpoint("TRACE", "core/v1/items")
 
 
 class TestAclose:

@@ -65,5 +65,22 @@ class TestOfficialApiCallTool:
         async with Client(build_mcp()) as client:
             with pytest.raises(ToolError):
                 await client.call_tool(
-                    "official_api_call", {"method": "GET", "path": "x"}
+                    "official_api_call",
+                    {"method": "GET", "path": "core/v1/items"},
+                )
+
+    async def test_disallowed_endpoint_raises_toolerror_with_reason(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/token/":
+                return httpx.Response(200, json={"access_token": "T"})
+            raise AssertionError("сеть не должна вызываться при запрете")
+
+        monkeypatch.setattr(tool_mod, "build_client", fake_factory(handler))
+        async with Client(build_mcp()) as client:
+            with pytest.raises(ToolError, match="неймспейс"):
+                await client.call_tool(
+                    "official_api_call",
+                    {"method": "GET", "path": "search/v1/items"},
                 )

@@ -42,6 +42,8 @@ def register(mcp: FastMCP) -> None:
         try:
             await ctx.info(f"official API {method} {path}")
             return await client.call(method, path, params)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
         except httpx.HTTPStatusError as exc:
             raise ToolError(
                 f"официальный API вернул HTTP {exc.response.status_code}"
