@@ -40,9 +40,18 @@ Recommendations
 
 ## Этап 3 — упаковка в Claude Code plugin
 
-- [ ] `claude plugin validate ./` — проверка манифеста и frontmatter
-- [ ] `claude --plugin-dir ./` + `/reload-plugins` — локальная отладка
-- [ ] `.mcp.json` в плоском формате; переключение dev → `uvx` после публикации
+- [x] `claude plugin validate ./` — PASS (plugin + marketplace манифесты; 1 minor warning)
+- [x] Структура: плоский `.mcp.json`, компоненты в корне, версии синхронны (0.1.0)
+- [x] End-to-end: плагинная stdio-команда из `.mcp.json` запускает сервер с
+      тулзами `ping` + `official_api_call` (проверено FastMCP-клиентом)
+- [x] Валидация через агент `plugin-dev:plugin-validator`: 0 critical, 0 major
+- [ ] Интерактивная `claude --plugin-dir ./` + `/reload-plugins` — требует
+      интерактивной сессии (эквивалент проверен через stdio)
+- [ ] Переключение dev → `uvx` после публикации в PyPI (Этап 5)
+
+> **Known warning:** `CLAUDE.md` в корне не грузится как install-time контекст
+> (нужен для разработки репо; guardrails продублированы в `avito-legal-guardrails`).
+> Принято осознанно.
 
 ## Этап 4 — переносимость
 
