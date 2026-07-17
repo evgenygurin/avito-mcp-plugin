@@ -62,6 +62,35 @@ uv run mypy src
   логов/прогресса, docstring = «что делает + когда вызывать».
 - < 20 тулз на сервер (иначе падает точность выбора моделью).
 
+## Документация зависимостей — Context7 (обязательно)
+
+Перед тем как писать или менять код, использующий **FastMCP** или любую другую
+Python-зависимость, **сначала сверься с актуальной документацией через Context7**
+под ту версию, что реально стоит в проекте. Не полагайся на память, обучающие
+данные или `docs/researches/` — API меняется между версиями.
+
+Проверить установленную версию:
+
+```bash
+cd server && uv run python -c "import fastmcp; print(fastmcp.__version__)"
+grep -E 'fastmcp|python' server/pyproject.toml server/uv.lock | head
+```
+
+Затем (workflow Context7 из глобального `~/.claude/CLAUDE.md`):
+
+1. `resolve-library-id(libraryName: "fastmcp")` → получить Context7 ID.
+2. `query-docs(id, topic: "<tools|context|structured-output|auth|testing|...>", mode: "code")`
+   — `topic` **обязателен**; `mode=code` для примеров, `mode=info` для архитектуры.
+
+**Почему это критично:** FastMCP v3 имел breaking changes относительно v2, а
+детали отличаются даже между 3.x. Пример: в `fastmcp 3.4.4` `res.data` —
+десериализованный объект (`res.data.length`), а не dict (`res.data["length"]`),
+как показывал research. Сверка с доками под конкретную версию экономит время и
+предотвращает ошибки.
+
+Так же — для `pydantic`, `uv`, `httpx`/`curl_cffi` и прочих зависимостей: сверяй
+API с версией из `uv.lock`, а не по памяти.
+
 ## Версии
 
 SemVer синхронно: `.claude-plugin/plugin.json` ↔ `server/pyproject.toml`.
