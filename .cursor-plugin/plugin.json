@@ -1,0 +1,21 @@
+{
+  "name": "avito-mcp-plugin",
+  "displayName": "Avito MCP Plugin",
+  "description": "Skills + встроенный MCP-сервер (FastMCP v3) для работы с Avito: официальный API, парсинг, правовые guardrails",
+  "version": "0.1.0",
+  "author": {
+    "name": "evgenygurin",
+    "email": "e.a.gurin@outlook.com"
+  },
+  "homepage": "https://github.com/evgenygurin/avito-mcp-plugin",
+  "repository": "https://github.com/evgenygurin/avito-mcp-plugin",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "mcp",
+    "avito",
+    "scraping",
+    "fastmcp"
+  ],
+  "skills": "./skills/"
+}

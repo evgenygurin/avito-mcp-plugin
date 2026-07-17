@@ -1,0 +1,16 @@
+{
+  "//": "Gemini CLI — поместить в .gemini/settings.json (проект) или ~/.gemini/settings.json. Для HTTP-транспорта используйте httpUrl (не url).",
+  "mcpServers": {
+    "avito": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/evgenygurin/avito-mcp-plugin.git#subdirectory=server",
+        "avito-mcp-server"
+      ],
+      "env": {
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}

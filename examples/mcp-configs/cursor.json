@@ -1,0 +1,16 @@
+{
+  "//": "Cursor — поместить в .cursor/mcp.json (проект) или ~/.cursor/mcp.json (глобально)",
+  "mcpServers": {
+    "avito": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/evgenygurin/avito-mcp-plugin.git#subdirectory=server",
+        "avito-mcp-server"
+      ],
+      "env": {
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}

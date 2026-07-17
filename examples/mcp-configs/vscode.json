@@ -1,0 +1,17 @@
+{
+  "//": "VS Code (Copilot) — поместить в .vscode/mcp.json. Внимание: ключ верхнего уровня — servers (НЕ mcpServers), нужен type.",
+  "servers": {
+    "avito": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/evgenygurin/avito-mcp-plugin.git#subdirectory=server",
+        "avito-mcp-server"
+      ],
+      "env": {
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}

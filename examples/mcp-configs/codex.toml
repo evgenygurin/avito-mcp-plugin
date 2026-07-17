@@ -1,0 +1,20 @@
+# OpenAI Codex CLI — добавить в ~/.codex/config.toml или .codex/config.toml
+# Codex — единственный агент на TOML. Streamable HTTP напрямую не умеет:
+# для remote-сервера нужен мост mcp-proxy (stdio ↔ HTTP).
+
+# Вариант для распространения (из git через uvx):
+[mcp_servers.avito]
+command = "uvx"
+args = [
+    "--from",
+    "git+https://github.com/evgenygurin/avito-mcp-plugin.git#subdirectory=server",
+    "avito-mcp-server",
+]
+
+[mcp_servers.avito.env]
+LOG_LEVEL = "info"
+
+# Вариант для локальной разработки (замените путь на свой клон):
+# [mcp_servers.avito]
+# command = "uv"
+# args = ["run", "--project", "/path/to/avito-mcp-plugin/server", "avito-mcp-server"]
