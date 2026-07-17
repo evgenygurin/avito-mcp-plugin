@@ -4,9 +4,9 @@
 для работы с [Avito](https://avito.ru): набор **skills** + встроенный
 **MCP-сервер** на Python ([FastMCP v3](https://gofastmcp.com)).
 
-> **СТАТУС: ранняя стадия (v0.1.0).** Готовы документация и каркас плагина.
-> Рабочих тулз MCP-сервера и финализированных skills пока нет — см.
-> [`docs/roadmap.md`](docs/roadmap.md).
+> **СТАТУС: ранняя разработка (v0.1.0).** Готовы документация, каркас плагина и
+> первый рабочий слой MCP-сервера (официальный API, модели, утилиты — 26 тестов).
+> Парсинг-тулзы и финализация skills — впереди, см. [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Идея
 
@@ -34,9 +34,10 @@
 
 ### MCP-сервер
 
-Пакет [`avito-mcp-server`](server/README.md) на FastMCP v3. Пока реализована
-диагностическая тулза `ping`; доменные тулзы (`search_listings`, `get_listing`,
-`official_api_call`, …) — в разработке.
+Пакет [`avito-mcp-server`](server/README.md) на FastMCP v3. Реализованы тулза
+`ping`, клиент официального API и тулза `official_api_call` (свои объявления),
+доменные модели и утилиты. Парсинг-тулзы (`search_listings`, `get_listing`) —
+в разработке.
 
 ## Установка
 

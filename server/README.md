@@ -3,8 +3,10 @@
 MCP-сервер на [FastMCP v3](https://gofastmcp.com) для работы с Avito. Часть
 плагина [`avito-mcp-plugin`](../README.md).
 
-> **СТАТУС: заготовка (skeleton).** Реализована только диагностическая тулза
-> `ping`. Доменные тулзы — в разработке (см. [`../docs/mcp-server.md`](../docs/mcp-server.md)).
+> **СТАТУС: ранняя разработка.** Реализованы: диагностическая тулза `ping`,
+> клиент официального API и тулза `official_api_call`, доменные модели, утилиты
+> (26 тестов, ruff + mypy чисты). Парсинг-тулзы (`search_listings`, `get_listing`)
+> — в разработке (см. [`../docs/mcp-server.md`](../docs/mcp-server.md)).
 
 ## Требования
 
@@ -49,9 +51,14 @@ uv run mypy src          # типы
 
 ```text
 server/
-├── pyproject.toml                     # uv_build, fastmcp>=3, project.scripts
-└── src/avito_mcp_server/
-    ├── __init__.py
-    ├── server.py                      # FastMCP инстанс + main() + тулза ping
-    └── tools/__init__.py              # доменные тулзы (register(mcp))
+├── pyproject.toml                     # uv_build, fastmcp>=3, httpx, project.scripts
+├── src/avito_mcp_server/
+│   ├── __init__.py
+│   ├── server.py                      # FastMCP инстанс + main(), регистрация тулз
+│   ├── models.py                      # доменные Pydantic-модели (Listing, SearchQuery, …)
+│   ├── utils.py                       # детерминированные утилиты (extract_listing_id)
+│   ├── official_api.py                # OAuth2-клиент официального API
+│   └── tools/
+│       └── official_api.py            # тулза official_api_call (register(mcp))
+└── tests/                             # pytest: in-memory Client(mcp) + httpx.MockTransport
 ```

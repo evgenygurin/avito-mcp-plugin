@@ -9,15 +9,20 @@ Recommendations
 - [x] Репозиторий, документация, каркас плагина
 - [x] Манифесты: `plugin.json`, `marketplace.json`, `.mcp.json`, `gemini-extension.json`
 - [x] 4 skeleton-скила (`using-avito-mcp`, `scraping-avito`, `avito-legal-guardrails`, `avito-official-api`)
-- [x] Заготовка MCP-сервера (`server/`, тулза `ping`)
-- [ ] Рабочие тулзы, тесты, публикация — ниже
+- [x] MCP-сервер (`server/`): тулзы `ping` и `official_api_call`, модели, утилиты, 26 тестов
+- [ ] Парсинг-тулзы, финализация skills, CI, публикация — ниже
 
 ## Этап 1 — MCP-сервер
 
-- [ ] `uv sync --dev`, зафиксировать `uv.lock`
-- [ ] Тулзы с Pydantic-моделями возврата (structured output), `Context` для
-      логов/прогресса, `async def` + `lifespan` под пул соединений
-- [ ] In-memory тесты (`Client(mcp)`) на каждую тулзу
+- [x] `uv sync --dev`, зафиксирован `uv.lock`, добавлен `httpx`
+- [x] Доменные Pydantic-модели (`Listing`, `SearchQuery`, `SearchResult`)
+- [x] Утилиты (`extract_listing_id`)
+- [x] Клиент официального API (OAuth2 `client_credentials`, инъекция HTTP-клиента)
+- [x] Тулза `official_api_call` с обработкой ошибок через `ToolError`
+- [x] In-memory тесты (`Client(mcp)`) + `httpx.MockTransport` — 26 тестов, ruff + mypy чисты
+- [ ] Парсинг-тулзы (`search_listings`, `get_listing`) — слой обхода антибота
+      (браузер + прокси), **без** «лобового» обхода капчи
+- [ ] `lifespan` под пул соединений (когда появится БД/Redis)
 - [ ] Порог HTTP-транспорта: сервер нужен удалённо → `mcp.http_app()` + `JWTVerifier`
 
 ## Этап 2 — skills

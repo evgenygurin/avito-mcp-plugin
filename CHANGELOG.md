@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Доменные Pydantic-модели: `Listing`, `SearchQuery`, `SearchResult`.
+- Утилита `extract_listing_id` (id объявления из URL или «голого» id).
+- Клиент официального API (`AvitoOfficialClient`, OAuth2 `client_credentials`,
+  инъекция HTTP-клиента для тестируемости).
+- MCP-тулза `official_api_call` (свои объявления; ошибки через `ToolError`).
+- Тестовый слой: 26 тестов через in-memory `Client(mcp)` и `httpx.MockTransport`;
+  ruff + mypy чисты.
+- Зависимость `httpx`.
+
 ## [0.1.0] — 2026-07-17
 
 Первичный каркас и документация проекта.
