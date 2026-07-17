@@ -19,8 +19,10 @@ IP до чистого → curl_cffi (`impersonate`) + follow SSR-редирек
 
 ### Ключевые решения (согласованы)
 
-1. **Legal-позиция:** guardrails убираются полностью. Полный паритет, включая
-   `parse_phone` и непрерывный мониторинг. Правовой риск оператора — на пользователе.
+1. **Legal-позиция:** guardrails-документация убирается. Паритет с Duff89 по
+   фактическим данным и мониторингу; правовой риск оператора — на пользователе.
+   **Исключение (этическая граница):** `parse_phone` — сбор телефонов продавцов
+   (ПДн третьих лиц в промышленном масштабе) — намеренно **НЕ реализуется**.
 2. **Архитектура:** agent-driven stateless-тулзы + лёгкое sqlite-состояние.
    Мониторинг — через внешний планировщик (агент/cron/`/schedule`), не фоновый цикл
    в сервере.
@@ -82,13 +84,13 @@ retry-логику**: вместо одной ротации IP — **rotate-unt
 
 ## 4. Инвентарь MCP-тулз (7 шт., все — фичи Duff89)
 
-Фильтры и `parse_views`/`parse_phone` — **параметры**, не отдельные тулзы. Держит
-нас глубоко под лимитом Anthropic «< 20 тулз».
+Фильтры и `parse_views` — **параметры**, не отдельные тулзы. Держит нас глубоко под
+лимитом Anthropic «< 20 тулз». `parse_phone` из Duff89 **исключён** (ПДн третьих лиц).
 
 | # | Тулза | Duff89-источник | Ключевые параметры |
 |---|---|---|---|
-| 1 | `search_listings` | `AvitoParse.parse()` | `url_or_query`, `region`, `pages`, `include_keywords`, `exclude_keywords`, `seller_blacklist`, `price_min/max`, `geo`, `max_age`, `parse_views`, `parse_phone` |
-| 2 | `get_listing` | детали объявления | `id_or_url`, `with_views`, `with_phone` |
+| 1 | `search_listings` | `AvitoParse.parse()` | `url_or_query`, `region`, `pages`, `include_keywords`, `exclude_keywords`, `seller_blacklist`, `price_min/max`, `geo`, `max_age`, `parse_views` |
+| 2 | `get_listing` | детали объявления | `id_or_url`, `with_views` |
 | 3 | `scan_new_listings` | dedup + смена цены (мониторинг-примитив) | фильтры + пишет в sqlite; возвращает только новое/подешевевшее |
 | 4 | `check_proxy_health` | ротация/диагностика прокси | — |
 | 5 | `send_notification` | Telegram/VK | `channel` (telegram\|vk), `message`, `targets?` |
@@ -160,7 +162,6 @@ class Listing(BaseModel):
     is_promotion: bool = False
     published_at: int | None       # sortTimeStamp
     views: int | None = None       # если parse_views
-    phone: str | None = None       # если parse_phone
 
 class SearchResult(BaseModel):
     items: list[Listing]
