@@ -1,17 +1,94 @@
 # avito-mcp-plugin
 
-Переносимый плагин для AI-агентов (Claude Code, Cursor, Codex, Gemini CLI и др.) для работы с Avito: набор skills + встроенный MCP-сервер на Python.
+Переносимый плагин для AI-агентов (Claude Code, Cursor, Codex, Gemini CLI и др.)
+для работы с [Avito](https://avito.ru): набор **skills** + встроенный
+**MCP-сервер** на Python ([FastMCP v3](https://gofastmcp.com)).
 
-## Статус
+> **СТАТУС: ранняя стадия (v0.1.0).** Готовы документация и каркас плагина.
+> Рабочих тулз MCP-сервера и финализированных skills пока нет — см.
+> [`docs/roadmap.md`](docs/roadmap.md).
 
-Ранняя стадия — этап проектирования и исследований. Кода пока нет.
+## Идея
 
-## Архитектура (планируется)
+Плагин построен по принципу **«толстое ядро + тонкие адаптеры»**:
 
-«Толстое ядро + тонкие адаптеры»: один Python-пакет с MCP-сервером на FastMCP v3 (детерминированные тулзы), плюс набор переносимых `SKILL.md`. Claude Code подключает всё как plugin; другие агенты — тот же MCP-сервер через свои конфиги.
+- **MCP-сервер** несёт детерминированную логику (HTTP к Avito, парсинг,
+  официальный API) — код тулз не попадает в контекст агента.
+- **Skills** несут процедурное знание: как обходить антибот, что можно собирать
+  по закону, как работать с официальным API.
+- **Тонкие адаптеры** (`AGENTS.md`, `GEMINI.md`, …) дают переносимость между
+  агентами.
+
+Подробнее — [`docs/architecture.md`](docs/architecture.md).
+
+## Что внутри
+
+### Skills
+
+| Скил | Когда триггерится |
+|---|---|
+| [`using-avito-mcp`](skills/using-avito-mcp/SKILL.md) | нужны данные Avito → маршрутизация в тулзы |
+| [`scraping-avito`](skills/scraping-avito/SKILL.md) | антибот, `403`/`429`, капча при парсинге |
+| [`avito-legal-guardrails`](skills/avito-legal-guardrails/SKILL.md) | перед сбором/хранением данных |
+| [`avito-official-api`](skills/avito-official-api/SKILL.md) | работа со своими объявлениями через API |
+
+### MCP-сервер
+
+Пакет [`avito-mcp-server`](server/README.md) на FastMCP v3. Пока реализована
+диагностическая тулза `ping`; доменные тулзы (`search_listings`, `get_listing`,
+`official_api_call`, …) — в разработке.
+
+## Установка
+
+> Плагин ещё не опубликован в маркетплейсе. Пока — локальная установка для разработки.
+
+### Claude Code (локально)
+
+```bash
+git clone https://github.com/evgenygurin/avito-mcp-plugin.git
+claude --plugin-dir ./avito-mcp-plugin     # загрузить на сессию
+# внутри Claude Code:
+/reload-plugins
+claude plugin validate ./avito-mcp-plugin  # проверка манифеста
+```
+
+MCP-сервер стартует автоматически (см. [`.mcp.json`](.mcp.json)); требуется
+установленный [`uv`](https://docs.astral.sh/uv/).
+
+### Другие агенты
+
+Конфигурация MCP-сервера для Cursor, Codex, Gemini CLI и др. —
+[`docs/portability.md`](docs/portability.md).
 
 ## Документация
 
-- [`docs/researches/`](docs/researches/) — исследовательские материалы:
-  - Проектирование переносимого плагина (skills + MCP-сервер, Python 3.12 / FastMCP v3 / uv)
-  - Парсинг Avito на Python (антибот, инструменты, прокси, архитектура, право)
+- [Архитектура](docs/architecture.md) — ядро + адаптеры, когда skill/tool/command/hook
+- [Skills](docs/skills.md) — стандарт agentskills.io, progressive disclosure
+- [MCP-сервер](docs/mcp-server.md) — FastMCP v3, тулзы, тесты, дистрибуция
+- [Парсинг Avito](docs/avito-scraping.md) — антибот, гибридная схема, прокси
+- [Право (РФ)](docs/avito-legal.md) — ст. 1334 ГК, 152-ФЗ, ст. 272 УК
+- [Переносимость](docs/portability.md) — конфиги MCP по агентам
+- [Roadmap](docs/roadmap.md) — этапы разработки
+- [Исследования](docs/researches/) — первичные research-материалы
+
+## Философия
+
+- **Детерминизм в тулзах, знание в skills** — тяжёлая логика не ест контекст.
+- **Переносимость** — открытые стандарты (MCP, Agent Skills), не привязка к рантайму.
+- **Guardrails первыми** — правовые ограничения РФ явно, до сбора данных.
+- **Documentation TDD** — skills тестируются на свежих агентах до релиза.
+
+## Дисклеймер
+
+Парсинг Avito несёт правовые риски в РФ (смежное право на БД, ПДн, обход
+техсредств защиты). См. [`docs/avito-legal.md`](docs/avito-legal.md). Материалы
+репозитория носят справочный характер и не являются юридической консультацией.
+
+## Вклад
+
+См. [`CONTRIBUTING.md`](CONTRIBUTING.md). Skills создаются и меняются по
+методологии `superpowers:writing-skills`.
+
+## Лицензия
+
+MIT (файл `LICENSE` будет добавлен на этапе публикации — см. roadmap).
