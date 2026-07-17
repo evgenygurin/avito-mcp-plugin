@@ -15,3 +15,9 @@ async def test_expected_tools_are_registered() -> None:
     async with Client(mcp) as client:
         names = {t.name for t in await client.list_tools()}
     assert {"ping", "official_api_call"} <= names
+
+
+async def test_skills_served_via_server() -> None:
+    async with Client(mcp) as client:
+        uris = [str(r.uri) for r in await client.list_resources()]
+    assert any("avito-legal-guardrails" in u for u in uris)

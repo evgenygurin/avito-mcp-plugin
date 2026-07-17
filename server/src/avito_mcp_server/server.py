@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastmcp import FastMCP
 from pydantic import BaseModel
 
+from .skills_provider import register_skills
 from .tools import official_api
 
 mcp = FastMCP("avito-mcp-server")
@@ -33,6 +34,10 @@ async def ping(message: str = "ping") -> Pong:
 
 
 official_api.register(mcp)
+
+# Раздача skills/ по MCP (skill://<name>/…) — любому MCP-клиенту.
+# graceful: если каталог skills/ не найден, сервер работает без раздачи.
+register_skills(mcp)
 
 # TODO: зарегистрировать парсинг-тулзы (listings) после реализации слоя обхода
 # антибота — см. skills/scraping-avito и docs/avito-scraping.md.
