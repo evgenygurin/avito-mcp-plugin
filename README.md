@@ -74,6 +74,7 @@ MCP-клиент получает их через `list_resources`/`read_resourc
 - [Парсинг Avito](docs/avito-scraping.md) — антибот, гибридная схема, прокси
 - [Право (РФ)](docs/avito-legal.md) — ст. 1334 ГК, 152-ФЗ, ст. 272 УК
 - [Переносимость](docs/portability.md) — конфиги MCP по агентам
+- [Релиз](docs/releasing.md) — версии, сборка, публикация в PyPI
 - [Roadmap](docs/roadmap.md) — этапы разработки
 - [Исследования](docs/researches/) — первичные research-материалы
 
@@ -97,4 +98,4 @@ MCP-клиент получает их через `list_resources`/`read_resourc
 
 ## Лицензия
 
-MIT (файл `LICENSE` будет добавлен на этапе публикации — см. roadmap).
+MIT — см. [`LICENSE`](LICENSE).

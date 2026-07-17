@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Added (Этап 5 — релиз-подготовка)
+
+- `LICENSE` (MIT), `.env.example` (переменные окружения официального API и сервера).
+- `scripts/check_versions.py` — проверка синхронности версий в 5 манифестах.
+- `docs/releasing.md` — процесс релиза и публикации в PyPI.
+
 ### Added (Этап 4 — переносимость)
 
 - Раздача `skills/` по MCP через `SkillsProvider` (`skill://<name>/SKILL.md`);
@@ -15,6 +21,8 @@
 - Готовые конфиги MCP-сервера для Cursor/Codex/Gemini/VS Code в
   `examples/mcp-configs/`.
 - Тонкие адаптеры: `.cursor-plugin/plugin.json`, `.codex/INSTALL.md`.
+- `gemini-extension.json` теперь включает блок `mcpServers` — установка
+  Gemini-расширения поднимает MCP-сервер `avito` в один шаг.
 
 ### Changed
 

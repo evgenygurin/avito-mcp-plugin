@@ -63,12 +63,17 @@ Recommendations
       проверено end-to-end через stdio (8 ресурсов); 32 теста
 - [ ] Живая проверка подключения к Cursor/Codex/Gemini (нужны сами агенты)
 
-## Этап 5 — CI/CD и публикация
+## Этап 5 — релиз-подготовка и публикация
 
-- [ ] GitHub Actions: `ruff` + `mypy` + `pytest` на PR
-- [ ] Публикация в PyPI по тегу (Trusted Publishing / OIDC — без хранения токена)
-- [ ] Синхронизировать `plugin.json.version` и `pyproject.toml.version`
-- [ ] `LICENSE` (MIT), `.gitignore`
+- [x] `LICENSE` (MIT), `.gitignore`, `.env.example`
+- [x] Скрипт синхронизации версий [`scripts/check_versions.py`](../scripts/check_versions.py)
+      (5 манифестов; проверено на pass и на ловле рассинхрона)
+- [x] Документация процесса релиза/публикации — [`releasing.md`](releasing.md)
+- [ ] GitHub Actions: `ruff` + `mypy` + `pytest` на PR (**отложено**)
+- [ ] Публикация в PyPI по тегу (Trusted Publishing / OIDC) — после готовности
+      парсинг-тулз и первого стабильного релиза
+- [ ] Переключение `.mcp.json` и примеров dev → `uvx avito-mcp-server` после
+      первой публикации в PyPI
 
 ## Триггеры смены решений
 
