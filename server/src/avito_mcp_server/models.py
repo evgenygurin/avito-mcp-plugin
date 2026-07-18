@@ -33,3 +33,12 @@ class SearchResult(BaseModel):
     @property
     def count(self) -> int:
         return len(self.items)
+
+
+class ProxyHealth(BaseModel):
+    """Результат диагностики прокси/кук (пробный запрос к Avito)."""
+
+    ok: bool
+    cookie_provider: str
+    proxy_type: str
+    detail: str
