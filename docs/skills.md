@@ -10,11 +10,15 @@ Claude Code, Codex, Cursor, Gemini CLI, VS Code и другими агентам
 |---|---|---|
 | [`using-avito-mcp`](../skills/using-avito-mcp/SKILL.md) | нужны данные Avito → маршрутизация в тулзы | reference |
 | [`scraping-avito`](../skills/scraping-avito/SKILL.md) | антибот, `403`/`429`, капча при парсинге | technique |
-| [`avito-legal-guardrails`](../skills/avito-legal-guardrails/SKILL.md) | перед сбором/хранением данных | discipline |
-| [`avito-official-api`](../skills/avito-official-api/SKILL.md) | работа со своими объявлениями через API | reference |
 
-> Все четыре — **черновики-заготовки**. Финализация — по методологии
+> Оба — **черновики-заготовки**. Финализация — по методологии
 > `superpowers:writing-skills` (см. ниже).
+>
+> Скилы `avito-legal-guardrails` и `avito-official-api` удалены вместе с
+> официальным API — проект переходит на целевой фичесет парсинга Avito
+> ([дизайн](superpowers/specs/2026-07-18-avito-parser-design.md)), где
+> legal-обвязка и работа со своим кабинетом через официальный API не входят
+> в фичесет.
 
 ## Формат SKILL.md
 

@@ -56,5 +56,5 @@ LOG_LEVEL = "info"
 ## Проверка
 
 - Skills должны появиться в списке доступных навыков Codex.
-- MCP-сервер `avito` с тулзами `ping`, `official_api_call` — в списке MCP.
+- MCP-сервер `avito` с тулзами парсинга Avito (`search_listings`, `get_listing`, … — 🔜 план) — в списке MCP.
 - Сервер также раздаёт skills как ресурсы `skill://<name>/SKILL.md`.

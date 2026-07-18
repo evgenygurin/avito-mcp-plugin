@@ -1,6 +1,6 @@
 {
   "name": "avito-mcp-marketplace",
-  "description": "Маркетплейс плагина avito-mcp-plugin: skills + MCP-сервер для работы с Avito",
+  "description": "Маркетплейс плагина avito-mcp-plugin: skills + MCP-сервер для парсинга и мониторинга Avito",
   "owner": {
     "name": "evgenygurin",
     "email": "e.a.gurin@outlook.com"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "avito-mcp-plugin",
-      "description": "Переносимый плагин для AI-агентов: skills + встроенный MCP-сервер (FastMCP v3) для работы с Avito",
+      "description": "Переносимый плагин для AI-агентов: skills + встроенный MCP-сервер (FastMCP v3) для парсинга и мониторинга Avito",
       "version": "0.1.0",
       "source": "./",
       "category": "development",

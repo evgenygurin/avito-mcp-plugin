@@ -7,9 +7,35 @@
 
 ## [Unreleased]
 
+### Changed (разворот к полнофункциональному парсингу каталога Avito)
+
+- Проект переориентирован с официального API `api.avito.ru` на полнофункциональный
+  парсер публичного каталога: движок парсинга (провайдеры кук, ротация прокси до
+  чистого IP, curl_cffi, извлечение JSON со страницы) вместо OAuth2-клиента над
+  официальным API.
+- См. [`docs/superpowers/specs/2026-07-18-avito-parser-design.md`](docs/superpowers/specs/2026-07-18-avito-parser-design.md)
+  — целевой дизайн 7 MCP-тулз (`search_listings`, `get_listing`,
+  `scan_new_listings`, `check_proxy_health`, `send_notification`,
+  `export_listings`, `get_price_history`).
+
+### Removed (разворот к полнофункциональному парсингу каталога Avito)
+
+- Тулзы официального API: `ping`, `official_api_call`, `get_own_items`,
+  `get_account_info`.
+- Клиент официального API (`official_api.py`, OAuth2 `client_credentials` +
+  allowlist `validate_endpoint`) и модели `OwnItem`, `OwnItemsResult`, `AccountInfo`.
+- Переменные окружения `AVITO_CLIENT_ID`, `AVITO_CLIENT_SECRET`.
+- Скилы `avito-legal-guardrails` и `avito-official-api`, документ
+  `docs/avito-legal.md`.
+- Правовые guardrails как документационный слой: полнофункциональный фичесет
+  парсинга строится по фактическим данным и мониторингу, правовой риск — на
+  операторе. Единственное
+  сохранённое ограничение — `parse_phone` (сбор телефонов продавцов) намеренно
+  **не реализуется** ни в одной тулзе.
+
 ### Added (Этап 5 — релиз-подготовка)
 
-- `LICENSE` (MIT), `.env.example` (переменные окружения официального API и сервера).
+- `LICENSE` (MIT), `.env.example` (переменные окружения сервера).
 - `scripts/check_versions.py` — проверка синхронности версий в 5 манифестах.
 - `docs/releasing.md` — процесс релиза и публикации в PyPI.
 
@@ -26,24 +52,24 @@
 
 ### Changed
 
-- Финализированы все 4 скила (Этап 2) по методологии `writing-skills`: убран
-  статус «черновик», описания приведены к формату WHEN-триггеров, добавлены
-  таблицы отвергаемых аргументов и Red Flags (`avito-legal-guardrails`),
-  discipline-блок про капчу (`scraping-avito`), реальные примеры вызова
-  `official_api_call`. Wiki-ссылки `[[…]]` заменены на markdown-ссылки.
-- RED-baseline и verify проведены на субагентах; скилы позиционированы как
-  reference-guardrails для переносимости.
+- Финализированы все скилы, актуальные на тот момент (Этап 2) по методологии
+  `writing-skills`: убран статус «черновик», описания приведены к формату
+  WHEN-триггеров, добавлен discipline-блок про капчу (`scraping-avito`).
+  Wiki-ссылки `[[…]]` заменены на markdown-ссылки. (Два из четырёх тогдашних
+  скилов позже удалены при развороте к полнофункциональному парсингу каталога
+  Avito — см. «Removed» выше.)
+- RED-baseline и verify проведены на субагентах.
 
 ### Added
 
 - Доменные Pydantic-модели: `Listing`, `SearchQuery`, `SearchResult`.
 - Утилита `extract_listing_id` (id объявления из URL или «голого» id).
-- Клиент официального API (`AvitoOfficialClient`, OAuth2 `client_credentials`,
-  инъекция HTTP-клиента для тестируемости).
-- MCP-тулза `official_api_call` (свои объявления; ошибки через `ToolError`).
 - Тестовый слой: 26 тестов через in-memory `Client(mcp)` и `httpx.MockTransport`;
   ruff + mypy чисты.
 - Зависимость `httpx`.
+- (Клиент официального API и тулза `official_api_call`, добавленные на этом
+  этапе, позже удалены при развороте к полнофункциональному парсингу каталога
+  Avito — см. «Removed» выше.)
 
 ## [0.1.0] — 2026-07-17
 

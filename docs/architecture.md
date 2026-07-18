@@ -9,7 +9,7 @@
 | Слой | Что несёт | Формат | Переносимость |
 |---|---|---|---|
 | **MCP-сервер** | Детерминированные операции, side-effects, доступ к API/БД | Python / FastMCP v3 | один сервер — все агенты, различаются лишь конфиги |
-| **Skills** | Процедурное знание, «как думать», workflow, guardrails | `SKILL.md` (agentskills.io) | открытый стандарт, десятки инструментов |
+| **Skills** | Процедурное знание, «как думать», workflow, паттерны | `SKILL.md` (agentskills.io) | открытый стандарт, десятки инструментов |
 
 Ключевая идея: **skill ссылается на тулзу словами-действиями, а не по имени
 рантайма**. Это делает и skill, и связку переносимыми.
@@ -19,16 +19,16 @@
 ```text
                     ┌──────────────────────────────┐
    AI-агент ───────▶│  skills/*  (SKILL.md)         │  процедурное знание,
-   (Claude Code,    │  scraping / legal / api / use │  guardrails, «как думать»
+   (Claude Code,    │  scraping-avito / using-avito │  «как думать», workflow
     Cursor, Codex,  └──────────────┬───────────────┘
     Gemini CLI …)                  │ вызывает словами-действиями
                                    ▼
                     ┌──────────────────────────────┐
-                    │  MCP-сервер `avito` (FastMCP) │  детерминизм: HTTP, парсинг,
-                    │  tools: search / get / api …  │  официальный API, прокси
-                    └──────────────┬───────────────┘
+                    │  MCP-сервер `avito` (FastMCP) │  движок парсинга:
+                    │  7 тулз: search / get / scan… │  куки → rotate-until-clean
+                    └──────────────┬───────────────┘  → curl_cffi → извлечение JSON
                                    ▼
-                    Avito: m.avito.ru/api/* · api.avito.ru · HTML
+                    Avito: HTML-каталог (loaderData.data.catalog) + SSR-редирект
 ```
 
 ## Когда что использовать
@@ -36,7 +36,7 @@
 | Механизм | Для чего | Где |
 |---|---|---|
 | **MCP tool** | Детерминированные операции, side-effects, доступ к БД/API. Код НЕ входит в контекст. | `server/` |
-| **Skill** | Процедурное знание, workflow, паттерны, guardrails. Инжектится в контекст при триггере. | `skills/` |
+| **Skill** | Процедурное знание, workflow, паттерны. Инжектится в контекст при триггере. | `skills/` |
 | **Command** | Явный слэш-триггер пользователя (`/…`). | `commands/` (пока нет) |
 | **Subagent** | Изолированный контекст под задачу (review, explore). | `agents/` (пока нет) |
 | **Hook** | Реакция на события (SessionStart, PostToolUse). | `hooks/` (пока нет) |
@@ -53,8 +53,8 @@ avito-mcp-plugin/
 ├── .claude-plugin/marketplace.json # запись маркетплейса
 ├── .mcp.json                       # объявление MCP-сервера (плоский формат)
 ├── gemini-extension.json           # адаптер Gemini CLI
-├── skills/                         # 4 skeleton-скила
-├── server/                         # Python-пакет MCP-сервера (src-layout)
+├── skills/                         # 2 скила (scraping-avito, using-avito-mcp)
+├── server/                         # Python-пакет MCP-сервера — движок парсинга (src-layout)
 ├── docs/                           # эта документация
 ├── README.md · CLAUDE.md · AGENTS.md · GEMINI.md · CONTRIBUTING.md
 ```
@@ -64,16 +64,68 @@ avito-mcp-plugin/
 плагина. Если положить `skills/` внутрь `.claude-plugin/`, они станут невидимы
 (тихий провал).
 
+## Структура сервера
+
+Ядро MCP несёт **собственный движок парсинга** — полнофункциональный парсер
+каталога Avito: внутренняя раскладка `server/src/avito_mcp_server/` разложена
+по функциональным модулям (куки, прокси, HTTP-клиент, экспорт, уведомления,
+фильтры, хранилище).
+
+```text
+avito_mcp_server/
+├── cookies/            # провайдеры кук: spfa (дефолт) / own / playwright
+├── proxies/            # Mobile / Server / None + ротация-до-чистого
+├── http/               # curl_cffi клиент (impersonate, retry)
+├── export/             # xlsx / json / csv
+├── notifications/      # Telegram, VK
+├── filters/            # keyword / seller / price / geo / max_age
+├── storage/            # sqlite: dedup + история цены
+├── models.py           # Listing / SearchResult (факты + опции)
+├── parser.py           # ядро: find_json_on_page + пагинация
+├── skills_provider.py  # раздача skills по MCP
+├── tools/              # тонкий MCP-слой поверх ядра (register(mcp) на группу)
+└── server.py           # инстанс + main() + регистрация групп тулз
+```
+
+**Движок** (валидирован живьём): провайдер кук → **rotate-until-clean** (ротация
+IP до чистого) → curl_cffi (`impersonate`) + follow SSR-редиректа на канонический
+URL категории → `find_json_on_page` (`script[type=mime/invalid][data-mfe-state=true]`)
+→ `loaderData.data.catalog.items`. Наше улучшение retry-логики: rotate-until-clean
+вместо одной ротации — устраняет типичный дефект наивной retry-логики (одна
+ротация → сдача).
+
+### 7 MCP-тулз (статус — 🔜 план)
+
+Фильтры и `parse_views` — параметры тулз, не отдельные тулзы; держит нас под
+лимитом Anthropic «< 20 тулз». Код ещё **не написан**.
+
+| # | Тулза | Назначение |
+|---|---|---|
+| 1 | `search_listings` | разовый поиск каталога (фильтры + `parse_views` — параметры) |
+| 2 | `get_listing` | детали объявления по `id_or_url` |
+| 3 | `scan_new_listings` | dedup + отслеживание цены (мониторинг-примитив, sqlite) |
+| 4 | `check_proxy_health` | диагностика прокси/ротации |
+| 5 | `send_notification` | Telegram / VK |
+| 6 | `export_listings` | xlsx / json / csv |
+| 7 | `get_price_history` | история цены из sqlite |
+
+Возврат — Pydantic-модели (structured output). Ошибки наружу — через `ToolError`.
+План реализации по фазам — в [`roadmap.md`](roadmap.md).
+
 ## Версионирование
 
-SemVer синхронно в двух местах:
+SemVer синхронно в **пяти** манифестах:
 
 - `.claude-plugin/plugin.json` → `version` — кэш-ключ обновления для Claude Code;
-- `server/pyproject.toml` → `version` — версия пакета для PyPI.
+- `.claude-plugin/marketplace.json` → `version` — запись маркетплейса;
+- `server/pyproject.toml` → `version` — версия пакета для PyPI;
+- `gemini-extension.json` → `version` — адаптер Gemini CLI;
+- `.cursor-plugin/plugin.json` → `version` — адаптер Cursor.
 
-Держи их синхронно (в идеале — CI-bump). FastMCP не версионирует тулзы
-автоматически: при breaking-изменении сигнатуры тулзы бампай major или используй
-`@tool(version=...)`.
+При бампе меняй все пять и проверяй синхронность:
+`python3 scripts/check_versions.py` (exit 0 = совпадают). FastMCP не версионирует
+тулзы автоматически: при breaking-изменении сигнатуры тулзы бампай major или
+используй `@tool(version=...)`.
 
 ## Дальше
 

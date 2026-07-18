@@ -1,7 +1,7 @@
 [project]
 name = "avito-mcp-server"
 version = "0.1.0"
-description = "MCP-сервер (FastMCP v3) для работы с Avito: парсинг, официальный API"
+description = "MCP-сервер (FastMCP v3) для парсинга публичного каталога Avito"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"

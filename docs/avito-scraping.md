@@ -1,20 +1,30 @@
-# Парсинг Avito: техническая документация
+# Парсинг Avito: движок сбора каталога
 
-Основано на исследовании
-[`researches/…avito…`](researches/compass_artifact_wf-b2af6ce8-bf3c-54d9-be56-db9ddc0bc5c7_text_markdown.md).
-Правовую часть см. в [`avito-legal.md`](avito-legal.md) — читать **до** сбора.
+Техническая документация движка, которым тулзы плагина собирают публичный каталог
+Avito. Движок реализует полнофункциональный парсинг каталога Avito на основе
+проверенного метода сбора данных и **валидирован живьём** 2026-07-18 (артефакты
+`robust_run.py`, `page.html`, `result/listings.json` станут тест-фикстурами).
 
-## TL;DR
+Дизайн целиком —
+[`specs/2026-07-18-avito-parser-design.md`](superpowers/specs/2026-07-18-avito-parser-design.md);
+how-to для агента — скил [`scraping-avito`](../skills/scraping-avito/SKILL.md).
+Тулзы, использующие движок, пока в статусе «🔜 план» (код ещё не написан).
 
-- Avito защищён **Qrator/CURATOR Antibot** + фаервол-капча (hCaptcha Enterprise /
-  GeeTest). «Голый» HTTP-клиент получает `403` «Доступ ограничен: проблема с IP».
-- `curl_cffi` снимает TLS/JA3-слой, но **не исполняет JS** → Qrator-challenge не
-  проходит. Нужен реальный браузер для кук либо чистые RU-прокси.
-- Рабочая схема — **гибрид**: браузер генерирует куки (`qrator_jsid`) →
-  куки+прокси → async HTTP-клиент к внутреннему JSON-API `m.avito.ru/api/*`.
-- Живой open-source-ориентир — `Duff89/parser_avito`.
+## TL;DR — конвейер
 
-## Уровни защиты
+```text
+провайдер кук (spfa | own | playwright)
+   → ротация IP до чистого (rotate-until-clean, до AVITO_MAX_ROTATE_ATTEMPTS)
+   → curl_cffi (impersonate) + follow SSR-редиректа на канонический URL категории
+   → find_json_on_page (script[type=mime/invalid][data-mfe-state=true])
+   → loaderData.data.catalog.items → list[Listing]
+```
+
+Ключевая идея — **не решать капчу, а не доводить до неё**: заходить с чистого
+RU-IP, на котором фаервол Avito не поднимает challenge. Чистота достигается
+ротацией до чистого IP, а не разовой сменой (см. rotate-until-clean).
+
+## Уровни антибота
 
 | Уровень | Механизм | Признак |
 |---|---|---|
@@ -23,115 +33,114 @@
 | Прикладной | Qrator JS-challenge, hCaptcha/GeeTest | пустая страница / капча |
 | Поведенческий | Мышь, скролл, паттерны | внезапная капча на 30–50+ запросе |
 
-Провайдер — **Qrator Labs** (российский бизнес с дек. 2024 — **Curator**).
-Маркер прошедшего проверку — кука `qrator_jsid`. Фаервол-капча детектится через
-эндпоинт `/web/5/firewallCaptcha/get` (параметр `rqdata`).
+Провайдер защиты — **Qrator Labs** (с дек. 2024 — **Curator**). Маркер клиента,
+прошедшего проверку, — кука `qrator_jsid`. Фаервол-капчу (hCaptcha Enterprise /
+GeeTest) движок обходит не решением, а тем, что не выдаёт повода её поднять.
 
-## Инструменты
+Как движок закрывает уровни:
 
-### HTTP-клиенты
+- **транспортный** — `curl_cffi` с `impersonate` даёт валидный TLS/JA3 браузера;
+- **сетевой / прикладной** — свежие куки от провайдера + чистый RU-IP через
+  rotate-until-clean; на чистом IP challenge просто не приходит;
+- **поведенческий** — stateless-запросы под умеренным темпом, без промышленного
+  долбления одной сессией.
 
-- **`curl_cffi`** — де-факто стандарт обхода TLS-fingerprint (`impersonate="chrome"`,
-  async, ротация прокси, HTTP/2). Ограничение: **не исполняет JS**. Совет практики —
-  не пиновать `chrome124`, паузы 1–3с, полный набор заголовков, одна сессия на IP.
-- **`httpx`/`aiohttp`** — не спуфят TLS; httpx удобен как обёртка (в parser_avito
-  curl_cffi подключён транспортом к httpx).
-- Альтернативы: `tls-client`, `primp` (новее/быстрее).
+## Шаги движка
 
-```python
-from curl_cffi import AsyncSession
+### 1. Провайдер кук (`AVITO_COOKIE_PROVIDER`, дефолт `spfa`)
 
-async def fetch(url, proxy, cookies):
-    async with AsyncSession(impersonate="chrome", proxies={"https": proxy}) as s:
-        return await s.get(url, cookies=cookies, headers={
-            "Accept-Language": "ru-RU,ru;q=0.9",
-            "Referer": "https://www.avito.ru/",
-        })
-```
+Единый интерфейс `CookiesProvider.get() / update() / handle_block()`.
 
-### Браузеры (для добычи кук)
+- **`spfa`** (дефолт, валидировано) — внешний поставщик кук: `POST spfa.ru/api/cookies`
+  за свежим набором + `/unblock` при блоке. Ключ — `SPFA_API_KEY`. Отдаёт готовые
+  куки прошедшего проверку клиента (`qrator_jsid` и пр.) — свой браузер не нужен.
+- **`own`** — куки пользователя из `AVITO_OWN_COOKIES` (взятые из своей сессии).
+- **`playwright`** — браузерная добыча кук (в т.ч. `ft`); опционально, тяжёлая
+  extra-зависимость; запасной путь, когда spfa недоступен.
 
-| Инструмент | База | Стелс | Против Avito |
-|---|---|---|---|
-| **Camoufox** | Firefox (C-level spoofing) | топ | работает; Firefox TLS иногда флагается |
-| **nodriver/zendriver** | CDP напрямую | очень высокий | хорош, наследник undetected-chromedriver |
-| **patchright** | Playwright fork | высокий | самый простой drop-in |
-| **SeleniumBase UC** | undetected-chromedriver | высокий | проверенный RU-выбор |
+### 2. Ротация IP до чистого (rotate-until-clean)
 
-**Headless детектится** — нужен headful или Xvfb.
+Прокси задаётся `AVITO_PROXY` (`user:pass@host:port`) + опц. `AVITO_PROXY_CHANGE_URL`:
 
-## Гибридная схема (рекомендуемая)
+- `MobileProxy` — есть change-url → умеет ротировать IP;
+- `ServerProxy` — статический;
+- `NoProxy` — без прокси.
+
+**Типичный дефект наивной retry-логики.** Реализация «на пару `block_threshold` +
+`max_count_of_retry`»: при блоке делается **одна** ротация IP, и если новый IP тоже
+грязный — сдача. На смешанном пуле (часть адресов уже прожжена) это регулярно не
+пробивает антибот — парсер возвращает пустой результат.
+
+**Фикс — rotate-until-clean.** Движок крутит ротацию **до чистого IP** (до
+`AVITO_MAX_ROTATE_ATTEMPTS`, дефолт 18), а не единожды. «Чистый» = ответ `200` с
+валидным JSON на странице (не `403`/`429`, без фаервол-капчи). Это наше ключевое
+улучшение retry-логики: оно пробивает смешанный IP-пул, на котором одиночная
+ротация захлёбывается.
+
+### 3. HTTP-запрос (curl_cffi + follow редиректа)
+
+`curl_cffi` с `impersonate` ∈ {chrome, edge, safari} — валидный TLS-fingerprint (не
+пиновать конкретный билд), случайный UA, прокси текущей ротации, полный набор
+заголовков (`Accept-Language: ru-RU`, `Referer`).
+
+На запрос по `url_or_query`/региону Avito отвечает **SSR-редиректом на канонический
+URL категории** (с числовым кодом категории в пути). Движок **следует редиректу** —
+искомый JSON лежит именно на канонической странице. Без follow выборка неполная или
+пустая.
+
+### 4. Извлечение JSON (find_json_on_page)
+
+Начальное состояние страницы Avito кладёт в inline-скрипт с нестандартным типом:
 
 ```text
-browser (patchright/Camoufox, headful/Xvfb, RU-прокси)
-   → проходит Qrator JS-challenge → куки (qrator_jsid, …) → Redis (TTL ~10–12ч)
-async workers (curl_cffi impersonate="chrome", http2=False) + sticky-прокси
-   → m.avito.ru/api/*  или  JSON в HTML
+script[type="mime/invalid"][data-mfe-state="true"]
 ```
 
-**Внутренний мобильный API:** `m.avito.ru/api/9/items`, `/api/15/items/{id}`,
-телефон — `/api/1/items/{id}/phone`. Требует параметр `key` (зашит во фронт,
-меняется при обновлениях). Быстро, но нестабильно.
+`find_json_on_page` находит этот тег, парсит его тело как JSON и достаёт объявления
+по пути:
 
-**Данные в HTML:** начальное состояние часто в JSON внутри страницы
-(`__initialData__`) и JSON-LD. Атрибуты `data-marker` стабильнее CSS-классов.
-
-## Официальный API
-
-`api.avito.ru` — **только для своих объявлений/рекламы**, не для массового сбора
-чужих. Детально — в скиле [`avito-official-api`](../skills/avito-official-api/SKILL.md).
-
-- Авторизация: OAuth2 `client_credentials`, `GET /token/`.
-- Scopes: `items:info`, `messenger:read/write`, `autoteka:*` и др.
-- Лимиты: `X-RateLimit-Limit` / `X-RateLimit-Remaining`; у рекламного API — «баллы».
-
-## Прокси
-
-- **Только RU-IP.** Иностранные и датацентр → фаервол-заглушка сразу.
-- **Иерархия:** мобильные > резидентные > датацентр.
-- Порядок цен: мобильные ~2500–5000 ₽/мес, резидентные ~290 ₽/ГБ.
-- **Ротация:** sticky-сессия на поток; смена IP+фингерпринта только на ретрае/бане.
-  Смена контекста браузера каждые 15–20 запросов.
-- **Паузы:** 2–6с между действиями, 30–60с каждые ~20 объявлений; «Показать
-  телефон» — ≤5–10/мин.
-
-## Production-архитектура
-
-Под стек FastAPI / async SQLAlchemy / PostgreSQL / Redis / Celery+Kafka / Docker:
-
-- **Browser pool** — отдельный Deployment (Playwright под Xvfb, 1 браузер = 1
-  RU-прокси), складывает куки в Redis с TTL.
-- **HTTP workers** — async `curl_cffi`, берут куки+sticky-прокси из Redis.
-- **Очереди** — Celery (периодика/ретраи), Kafka (`listings.raw` → `listings.parsed`).
-- **Мониторинг банов** — счётчик `403`/`429`/капч по прокси → карантин + алерт
-  (Prometheus/Grafana).
-- **Инкрементальный парсинг** — UPSERT + `content_hash`, история цен, по `last_seen`.
-
-```python
-async def fetch_with_retry(url, get_proxy, get_cookies, tries=3):
-    for attempt in range(tries):
-        proxy, cookies = get_proxy(), get_cookies()
-        r = await fetch(url, proxy, cookies)
-        if r.status_code == 200 and "firewallCaptcha" not in r.text:
-            return r
-        mark_bad(proxy)                         # карантин + новые куки
-        await asyncio.sleep(2 ** attempt + random.random())
-    raise BlockedError(url)
+```text
+loaderData.data.catalog.items  →  list[Listing]
 ```
 
-## Пороги смены стратегии
+Каждый item нормализуется в модель `Listing` (id, title, price, url, address,
+params, seller_id, is_promotion, published_at; `views` — если задан `parse_views`).
+Модель хранит **только фактические поля**; телефоны продавцов не собираются —
+функция извлечения телефона (`parse_phone`) в движок намеренно не портирована
+(ПДн третьих лиц).
 
-- >20% ответов — капча/`403` → сменить подход (браузер/прокси).
-- Рост доли банов >10% → добавить прокси / снизить темп.
-- Стоимость поддержки антибот-обхода > $300–500/мес → рассмотреть сервис
-  (Apify-актор под Avito) или официальный API.
+## Гигиена прокси
+
+- **Только RU-IP.** Иностранные и датацентр-адреса → фаервол-заглушка сразу.
+- **Иерархия чистоты:** мобильные > резидентные > датацентр.
+- Смешанный пул неизбежно содержит прожжённые IP — их отсеивает rotate-until-clean.
+- Sticky-сессия на поток; смена IP — только на блоке/ретрае.
+- Умеренный темп с паузами между запросами, без долбления одной сессией.
+
+## Переменные окружения движка
+
+| Переменная | Назначение |
+|---|---|
+| `SPFA_API_KEY` | ключ провайдера кук `spfa` |
+| `AVITO_COOKIE_PROVIDER` | `spfa`\|`own`\|`playwright` (дефолт `spfa`) |
+| `AVITO_OWN_COOKIES` | куки для провайдера `own` |
+| `AVITO_PROXY` | прокси `user:pass@host:port` |
+| `AVITO_PROXY_CHANGE_URL` | URL ротации IP (→ MobileProxy) |
+| `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций до чистого IP (дефолт 18) |
+
+Полный список — в [`.env.example`](../.env.example).
 
 ## Caveats
 
-- Точные лимиты/пороги бана Avito публично не раскрыты — цифры оценочные.
-- Внутренний `key` и эндпоинты мобильного API меняются без предупреждения.
-- `curl_cffi` в одиночку против Qrator, скорее всего, недостаточен.
-- Antidetect-браузеры — движущаяся мишень, требуют патчинга.
+- Билды `impersonate` и структура страницы Avito меняются без предупреждения —
+  селектор `find_json_on_page` и путь `loaderData.data.catalog` придётся
+  подстраивать. Живой `page.html` держим как фикстуру-эталон.
+- Внутренний мобильный API (`m.avito.ru/api/*`) быстрее, но требует зашитый во
+  фронт `key`, который меняется при обновлениях → нестабилен; движок опирается на
+  SSR-JSON, а не на него.
+- Точные пороги бана Avito публично не раскрыты — `AVITO_MAX_ROTATE_ATTEMPTS` и
+  паузы подбираются эмпирически.
+- Headless-браузер (провайдер `playwright`) детектится — нужен headful/Xvfb.
 
-Полные источники и оговорки — в
-[исследовании](researches/compass_artifact_wf-b2af6ce8-bf3c-54d9-be56-db9ddc0bc5c7_text_markdown.md).
+Более широкий обзор антибот-ландшафта Avito —
+[в исследовании](researches/compass_artifact_wf-b2af6ce8-bf3c-54d9-be56-db9ddc0bc5c7_text_markdown.md).
