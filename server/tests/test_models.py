@@ -1,58 +1,43 @@
 """Тесты доменных Pydantic-моделей."""
 
-import pytest
-from pydantic import ValidationError
-
-from avito_mcp_server.models import (
-    Listing,
-    SearchQuery,
-    SearchResult,
-)
-
-
-class TestSearchQuery:
-    def test_defaults(self) -> None:
-        q = SearchQuery(query="iphone 15")
-        assert q.region is None
-        assert q.limit == 50
-
-    def test_rejects_empty_query(self) -> None:
-        with pytest.raises(ValidationError):
-            SearchQuery(query="   ")
-
-    def test_rejects_nonpositive_limit(self) -> None:
-        with pytest.raises(ValidationError):
-            SearchQuery(query="iphone", limit=0)
-
-    def test_rejects_limit_over_max(self) -> None:
-        with pytest.raises(ValidationError):
-            SearchQuery(query="iphone", limit=101)
+from avito_mcp_server.models import Listing, SearchResult
 
 
 class TestListing:
-    def test_minimal_has_optional_price(self) -> None:
+    def test_minimal_has_optional_fields(self) -> None:
         item = Listing(id=1, title="iPhone 15")
         assert item.price is None
         assert item.params == {}
+        assert item.is_promotion is False
+        assert item.views is None
 
-    def test_full(self) -> None:
+    def test_full_facts(self) -> None:
         item = Listing(
-            id=1234567890,
-            title="iPhone 15 128GB",
-            price=65000.0,
-            url="https://www.avito.ru/moskva/telefony/x_1234567890",
-            region="Москва",
-            params={"Память": "128 ГБ"},
+            id=7890298070,
+            title="7-к. квартира, 306,5 м²",
+            price=98630444,
+            url="https://www.avito.ru/nizhniy_novgorod/kvartiry/x_7890298070",
+            address="Нижний Новгород",
+            params={"площадь": "306,5 м²"},
+            seller_id="brand",
+            is_promotion=True,
+            published_at=1700000000,
+            views=42,
         )
-        assert item.price == 65000.0
-        assert item.params["Память"] == "128 ГБ"
+        assert item.price == 98630444
+        assert item.address == "Нижний Новгород"
+        assert item.seller_id == "brand"
+        assert item.views == 42
+
+    def test_no_pii_phone_field(self) -> None:
+        # Телефоны продавцов (ПДн) не моделируем.
+        assert "phone" not in Listing.model_fields
 
 
 class TestSearchResult:
-    def test_count_is_derived_from_items(self) -> None:
+    def test_count_is_derived(self) -> None:
         res = SearchResult(items=[Listing(id=1, title="a"), Listing(id=2, title="b")])
         assert res.count == 2
 
-    def test_empty_result(self) -> None:
-        res = SearchResult(items=[])
-        assert res.count == 0
+    def test_empty(self) -> None:
+        assert SearchResult(items=[]).count == 0

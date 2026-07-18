@@ -2,36 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Annotated
-
-from pydantic import (
-    BaseModel,
-    Field,
-    StringConstraints,
-    computed_field,
-)
-
-NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+from pydantic import BaseModel, Field, computed_field
 
 
 class Listing(BaseModel):
-    """Объявление Avito. Только фактические поля (без ПДн продавца)."""
+    """Объявление Avito. Только фактические поля (без ПДн продавца).
+
+    Телефоны/имена продавцов намеренно не моделируются: сбор контактов третьих
+    лиц — ПДн, вне области плагина.
+    """
 
     id: int
     title: str
     price: float | None = None
     url: str | None = None
-    region: str | None = None
-    seller_type: str | None = None
+    address: str | None = None
     params: dict[str, str] = Field(default_factory=dict)
-
-
-class SearchQuery(BaseModel):
-    """Параметры поиска объявлений."""
-
-    query: NonEmptyStr
-    region: str | None = None
-    limit: int = Field(default=50, gt=0, le=100)
+    seller_id: str | None = None
+    is_promotion: bool = False
+    published_at: int | None = None
+    views: int | None = None
 
 
 class SearchResult(BaseModel):
