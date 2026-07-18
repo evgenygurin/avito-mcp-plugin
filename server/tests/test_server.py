@@ -5,24 +5,13 @@ from fastmcp import Client
 from avito_mcp_server.server import mcp
 
 
-async def test_ping_tool_works() -> None:
+async def test_server_instantiates_and_serves_skills() -> None:
     async with Client(mcp) as client:
-        res = await client.call_tool("ping", {"message": "hi"})
-        assert res.data.length == 2
-
-
-async def test_expected_tools_are_registered() -> None:
-    async with Client(mcp) as client:
-        names = {t.name for t in await client.list_tools()}
-    assert {
-        "ping",
-        "official_api_call",
-        "get_own_items",
-        "get_account_info",
-    } <= names
-
-
-async def test_skills_served_via_server() -> None:
-    async with Client(mcp) as client:
-        uris = [str(r.uri) for r in await client.list_resources()]
-    assert any("avito-legal-guardrails" in u for u in uris)
+        tools = await client.list_tools()
+        assert all(
+            t.name
+            not in {"ping", "official_api_call", "get_own_items", "get_account_info"}
+            for t in tools
+        )
+        resources = await client.list_resources()
+        assert any(str(r.uri).startswith("skill://") for r in resources)

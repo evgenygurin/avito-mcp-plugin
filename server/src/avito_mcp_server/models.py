@@ -6,7 +6,6 @@ from typing import Annotated
 
 from pydantic import (
     BaseModel,
-    ConfigDict,
     Field,
     StringConstraints,
     computed_field,
@@ -44,44 +43,3 @@ class SearchResult(BaseModel):
     @property
     def count(self) -> int:
         return len(self.items)
-
-
-class OwnItem(BaseModel):
-    """Своё объявление из официального API (core/v1/items).
-
-    Форма ответа Avito варьируется — все поля кроме ``id`` опциональны,
-    неизвестные ключи игнорируются (устойчивость к изменениям API).
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    id: int
-    title: str | None = None
-    status: str | None = None
-    url: str | None = None
-    price: float | None = None
-    category: str | None = None
-
-
-class OwnItemsResult(BaseModel):
-    """Список своих объявлений и их количество."""
-
-    items: list[OwnItem]
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def count(self) -> int:
-        return len(self.items)
-
-
-class AccountInfo(BaseModel):
-    """Свой аккаунт (core/v1/accounts/self).
-
-    Возвращаем ``id`` (user_id для статистики) и отображаемое ``name``.
-    ПДн (email/phone) намеренно не включены — минимизация по 152-ФЗ.
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    id: int
-    name: str | None = None
