@@ -8,7 +8,7 @@ import os
 
 from fastmcp import Context, FastMCP
 
-from ..config import build_http_client
+from ..config import DEFAULT_COOKIE_PROVIDER, build_http_client
 from ..http.client import HttpClient
 from ..http.client import fetch_catalog
 from ..models import ProxyHealth, ProxyProbe, mask_proxy
@@ -34,7 +34,7 @@ def register(mcp: FastMCP) -> None:
         до массового парсинга. Возвращает конфиг и результат пробного запроса; при
         блокировке НЕ бросает ошибку — это валидный диагноз (``ok=false``).
         """
-        provider = os.getenv("AVITO_COOKIE_PROVIDER", "spfa")
+        provider = os.getenv("AVITO_COOKIE_PROVIDER", DEFAULT_COOKIE_PROVIDER)
         await ctx.info(f"check_proxy_health: {probe_url}")
 
         def _probe(client: HttpClient, url: str) -> tuple[bool, str]:

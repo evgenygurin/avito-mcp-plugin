@@ -18,6 +18,10 @@ from .storage.supabase import SupabaseStorage
 
 log = logging.getLogger(__name__)
 
+# Общий дефолт для build_http_client() и check_proxy_health (diagnostics.py) —
+# при смене провайдера по умолчанию править только здесь.
+DEFAULT_COOKIE_PROVIDER = "spfa"
+
 
 def _parse_own_cookies(raw: str | None) -> dict[str, str]:
     """Разобрать `AVITO_OWN_COOKIES`: JSON-объект либо строку `k=v; k=v`."""
@@ -48,7 +52,7 @@ def build_http_client() -> HttpClient:
         cooldown_store=_optional_storage(),
     )
     provider = build_cookies_provider(
-        os.getenv("AVITO_COOKIE_PROVIDER", "spfa"),
+        os.getenv("AVITO_COOKIE_PROVIDER", DEFAULT_COOKIE_PROVIDER),
         api_key=os.getenv("SPFA_API_KEY"),
         own_cookies=_parse_own_cookies(os.getenv("AVITO_OWN_COOKIES")),
         proxy=proxy.httpx_proxy(),

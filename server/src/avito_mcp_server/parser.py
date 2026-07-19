@@ -226,6 +226,36 @@ def _extract_views(item: dict[str, Any]) -> int | None:
     return None
 
 
+def _price(item: dict[str, Any]) -> float | None:
+    price_detailed = item.get("priceDetailed") or {}
+    return price_detailed.get("value") if isinstance(price_detailed, dict) else None
+
+
+def _seller_id(item: dict[str, Any]) -> str | None:
+    seller_id = item.get("sellerId")
+    return str(seller_id) if seller_id else None
+
+
+def _listing_url(item: dict[str, Any]) -> str | None:
+    # urlPath уже начинается со "/" — to_absolute_avito_url клеит без лишнего слэша.
+    url_path = item.get("urlPath")
+    return to_absolute_avito_url(str(url_path)) if url_path else None
+
+
+def _common_fields(item: dict[str, Any]) -> dict[str, Any]:
+    """Поля, общие для карточки каталога и детальной страницы объявления."""
+    return {
+        "id": item["id"],
+        "title": item.get("title") or "",
+        "price": _price(item),
+        "address": _address(item),
+        "url": _listing_url(item),
+        "seller_id": _seller_id(item),
+        "is_promotion": bool(item.get("isPromotion")),
+        "published_at": _published_at(item),
+    }
+
+
 def parse_listing_detail(html_code: str, with_views: bool = False) -> Listing | None:
     """Извлечь детальную информацию об одном объявлении из SSR-состояния страницы."""
     data = find_json_on_page(html_code)
@@ -234,49 +264,18 @@ def parse_listing_detail(html_code: str, with_views: bool = False) -> Listing | 
     item = _find_item(data)
     if item is None:
         return None
-    price_detailed = item.get("priceDetailed") or {}
-    price = price_detailed.get("value") if isinstance(price_detailed, dict) else None
-    url_path = item.get("urlPath")
-    seller_id = item.get("sellerId")
-    views = _extract_views(item) if with_views else None
     return Listing(
-        id=item["id"],
-        title=item.get("title") or "",
-        price=price,
-        address=_address(item),
-        url=f"https://www.avito.ru{url_path}" if url_path else None,
-        seller_id=str(seller_id) if seller_id else None,
-        is_promotion=bool(item.get("isPromotion")),
-        published_at=_published_at(item),
+        **_common_fields(item),
         params=_extract_params(item),
-        views=views,
+        views=_extract_views(item) if with_views else None,
         description=item.get("description") or None,
     )
 
 
 def extract_facts(catalog: dict[str, Any]) -> list[Listing]:
     """Смаппить ``catalog.items`` в ``Listing`` — только факты, без ПДн."""
-    out: list[Listing] = []
-    for item in catalog.get("items", []):
-        if not isinstance(item, dict) or not item.get("id"):
-            continue
-        price_detailed = item.get("priceDetailed") or {}
-        price = (
-            price_detailed.get("value") if isinstance(price_detailed, dict) else None
-        )
-        url_path = item.get("urlPath")
-        seller_id = item.get("sellerId")
-        out.append(
-            Listing(
-                id=item["id"],
-                title=item.get("title") or "",
-                price=price,
-                address=_address(item),
-                # urlPath уже начинается со "/" — склейка без лишнего слэша.
-                url=f"https://www.avito.ru{url_path}" if url_path else None,
-                seller_id=str(seller_id) if seller_id else None,
-                is_promotion=bool(item.get("isPromotion")),
-                published_at=_published_at(item),
-            )
-        )
-    return out
+    return [
+        Listing(**_common_fields(item))
+        for item in catalog.get("items", [])
+        if isinstance(item, dict) and item.get("id")
+    ]

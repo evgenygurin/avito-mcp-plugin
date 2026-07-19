@@ -12,6 +12,13 @@ from ..models import NotificationResult
 from ..notifications.sender import send_notification as do_send
 
 
+def _resolve_targets(targets: list[str] | None, env_var: str) -> list[str]:
+    """Явные ``targets`` побеждают; иначе — список из env (через запятую)."""
+    if targets:
+        return targets
+    return [t.strip() for t in os.getenv(env_var, "").split(",") if t.strip()]
+
+
 def register(mcp: FastMCP) -> None:
     """Зарегистрировать тулзу уведомлений на инстансе FastMCP."""
 
@@ -34,25 +41,9 @@ def register(mcp: FastMCP) -> None:
 
         def _run() -> NotificationResult:
             tg_token = os.getenv("AVITO_TG_TOKEN")
-            tg_chat_ids = (
-                targets
-                if targets
-                else [
-                    c.strip()
-                    for c in os.getenv("AVITO_TG_CHAT_IDS", "").split(",")
-                    if c.strip()
-                ]
-            )
+            tg_chat_ids = _resolve_targets(targets, "AVITO_TG_CHAT_IDS")
             vk_token = os.getenv("AVITO_VK_TOKEN")
-            vk_user_ids = (
-                targets
-                if targets
-                else [
-                    u.strip()
-                    for u in os.getenv("AVITO_VK_USER_IDS", "").split(",")
-                    if u.strip()
-                ]
-            )
+            vk_user_ids = _resolve_targets(targets, "AVITO_VK_USER_IDS")
 
             detail, sent, actual_targets = do_send(
                 channel=channel,

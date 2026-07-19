@@ -40,10 +40,10 @@ def register(mcp: FastMCP) -> None:
         Возвращает только новые объявления и те, что подешевели;
         неизменившиеся пропускает. Требует ``AVITO_SUPABASE_DSN``.
         """
-        spec = FilterSpec(
-            include_keywords=include_keywords or [],
-            exclude_keywords=exclude_keywords or [],
-            seller_blacklist=seller_blacklist or [],
+        spec = FilterSpec.from_optional(
+            include_keywords=include_keywords,
+            exclude_keywords=exclude_keywords,
+            seller_blacklist=seller_blacklist,
             price_min=price_min,
             price_max=price_max,
             geo=geo,

@@ -20,6 +20,34 @@ class FilterSpec(BaseModel):
     geo: str | None = None
     max_age: int | None = None  # максимальный возраст объявления в секундах
 
+    @classmethod
+    def from_optional(
+        cls,
+        *,
+        include_keywords: list[str] | None = None,
+        exclude_keywords: list[str] | None = None,
+        seller_blacklist: list[str] | None = None,
+        price_min: float | None = None,
+        price_max: float | None = None,
+        geo: str | None = None,
+        max_age: int | None = None,
+    ) -> "FilterSpec":
+        """Собрать спеку из параметров MCP-тулзы (список-фильтры приходят как ``None``).
+
+        Тулзы (``search_listings``, ``scan_new_listings``) объявляют список-параметры
+        как ``list[str] | None = None`` — FastMCP-friendly сигнатура, но ``FilterSpec``
+        хочет пустой список, а не ``None``. Общая точка сборки вместо копии в каждой тулзе.
+        """
+        return cls(
+            include_keywords=include_keywords or [],
+            exclude_keywords=exclude_keywords or [],
+            seller_blacklist=seller_blacklist or [],
+            price_min=price_min,
+            price_max=price_max,
+            geo=geo,
+            max_age=max_age,
+        )
+
 
 def apply_filters(
     items: list[Listing],

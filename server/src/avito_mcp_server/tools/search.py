@@ -41,10 +41,10 @@ def register(mcp: FastMCP) -> None:
         seller_blacklist, price_min/max, geo (подстрока адреса), max_age (секунды).
         Требует настроенных прокси/кук — см. .env.example.
         """
-        spec = FilterSpec(
-            include_keywords=include_keywords or [],
-            exclude_keywords=exclude_keywords or [],
-            seller_blacklist=seller_blacklist or [],
+        spec = FilterSpec.from_optional(
+            include_keywords=include_keywords,
+            exclude_keywords=exclude_keywords,
+            seller_blacklist=seller_blacklist,
             price_min=price_min,
             price_max=price_max,
             geo=geo,
