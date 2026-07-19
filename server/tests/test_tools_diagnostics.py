@@ -1,7 +1,10 @@
 """Тесты тулзы check_proxy_health (in-memory Client, мок движка)."""
 
 import json
+
+import pytest
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 
 import avito_mcp_server.tools.diagnostics as diag_mod
 from avito_mcp_server.proxies.proxy import NoProxy
@@ -29,6 +32,22 @@ async def test_check_proxy_health_ok(monkeypatch) -> None:
     assert res.data.ok is True
     assert res.data.cookie_provider == "own"
     assert res.data.proxy_type == "NoProxy"
+
+
+async def test_check_proxy_health_wraps_setup_errors_in_tool_error(
+    monkeypatch,
+) -> None:
+    # build_http_client() может бросить ValueError("пул прокси пуст") ДО
+    # входа в try/except _probe — эта ветка была единственной среди 7 тулз
+    # без общей ToolError-границы, отдавая сырое исключение вместо контракта.
+    def _boom():
+        raise ValueError("пул прокси пуст")
+
+    monkeypatch.setattr(diag_mod, "build_http_client", _boom)
+
+    async with Client(_mcp()) as client:
+        with pytest.raises(ToolError, match="пул прокси пуст"):
+            await client.call_tool("check_proxy_health", {})
 
 
 async def test_check_proxy_health_reports_block(monkeypatch) -> None:

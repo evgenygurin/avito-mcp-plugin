@@ -6,9 +6,10 @@ import asyncio
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from ..config import build_http_client, build_storage, page_pause
-from ..filters.filters import FilterSpec, apply_filters
+from ..filters.filters import FilterSpec, PageCount, apply_filters
 from ..http.client import fetch_catalog
 from ..models import PriceHistoryResult, PricePoint, ScanItem, ScanResult
 from ..parser import walk_pages
@@ -19,7 +20,9 @@ from ..utils import extract_listing_id
 def register(mcp: FastMCP) -> None:
     """Зарегистрировать тулзы мониторинга на инстансе FastMCP."""
 
-    @mcp.tool
+    @mcp.tool(
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    )
     async def scan_new_listings(
         url: str,
         ctx: Context,
@@ -30,16 +33,30 @@ def register(mcp: FastMCP) -> None:
         price_max: float | None = None,
         geo: str | None = None,
         max_age: int | None = None,
-        pages: int = 1,
+        pages: PageCount = 1,
     ) -> ScanResult:
         """Собрать новые и подешевевшие объявления (мониторинг-примитив).
 
         Use when нужно отследить новые объявления или снижение цены по регулярному
         поиску (вызывается внешним планировщиком — агентом/cron). Сверяет свежий
-        каталог с хранилищем в Postgres (``AVITO_SUPABASE_DSN``). Фильтры — те же, что в
-        search_listings, включая ``pages`` (сколько страниц каталога обойти).
-        Возвращает только новые объявления и те, что подешевели;
-        неизменившиеся пропускает. Требует ``AVITO_SUPABASE_DSN``.
+        каталог с хранилищем в Postgres (``AVITO_SUPABASE_DSN``). Возвращает
+        только новые объявления и те, что подешевели; неизменившиеся пропускает.
+        Требует ``AVITO_SUPABASE_DSN``.
+
+        Args:
+            url: ссылка на каталог Avito (категория/город).
+            include_keywords: оставить только объявления с одним из этих слов
+                в заголовке (регистр не важен).
+            exclude_keywords: отбросить объявления с любым из этих слов в
+                заголовке.
+            seller_blacklist: отбросить объявления этих продавцов (seller_id).
+            price_min: минимальная цена включительно.
+            price_max: максимальная цена включительно.
+            geo: подстрока адреса объявления (район, улица).
+            max_age: максимальный возраст объявления в СЕКУНДАХ с момента
+                публикации (не дни и не unix-timestamp).
+            pages: сколько страниц каталога обойти; обход прекращается на
+                последней странице сам.
         """
         spec = FilterSpec.from_optional(
             include_keywords=include_keywords,
@@ -107,7 +124,11 @@ def register(mcp: FastMCP) -> None:
         )
         return result
 
-    @mcp.tool
+    @mcp.tool(
+        annotations=ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False
+        ),
+    )
     async def get_price_history(
         listing_id: str,
         ctx: Context,

@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+from typing import Literal
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from ..models import NotificationResult
 from ..notifications.sender import send_notification as do_send
+
+NotificationChannel = Literal["telegram", "vk"]
 
 
 def _resolve_targets(targets: list[str] | None, env_var: str) -> list[str]:
@@ -22,11 +26,13 @@ def _resolve_targets(targets: list[str] | None, env_var: str) -> list[str]:
 def register(mcp: FastMCP) -> None:
     """Зарегистрировать тулзу уведомлений на инстансе FastMCP."""
 
-    @mcp.tool
+    @mcp.tool(
+        annotations=ToolAnnotations(destructiveHint=True, openWorldHint=True),
+    )
     async def send_notification(
         message: str,
         ctx: Context,
-        channel: str = "telegram",
+        channel: NotificationChannel = "telegram",
         targets: list[str] | None = None,
     ) -> NotificationResult:
         """Отправить уведомление в Telegram или VK о найденных объявлениях.

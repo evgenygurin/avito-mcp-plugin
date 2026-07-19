@@ -45,6 +45,21 @@ class _FakeClient:
 
 
 class TestScanNewListings:
+    async def test_pages_schema_has_sane_bounds(self) -> None:
+        async with Client(_mcp()) as client:
+            tools = await client.list_tools()
+        tool = next(t for t in tools if t.name == "scan_new_listings")
+        pages_schema = tool.inputSchema["properties"]["pages"]
+        assert pages_schema.get("minimum") == 1
+        assert pages_schema.get("maximum") is not None
+
+    async def test_max_age_has_parameter_description(self) -> None:
+        async with Client(_mcp()) as client:
+            tools = await client.list_tools()
+        tool = next(t for t in tools if t.name == "scan_new_listings")
+        max_age_schema = tool.inputSchema["properties"]["max_age"]
+        assert "секунд" in max_age_schema.get("description", "").lower()
+
     async def test_returns_new_and_dropped_only(self, monkeypatch) -> None:
         db = FakeStorage()
         db.upsert_seen(2, "/x_2", "price dropped", 1000)

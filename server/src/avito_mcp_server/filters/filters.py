@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 import time
+from typing import Annotated
 
 from pydantic import BaseModel, Field
 
 from ..models import Listing
+
+# Общий тип параметра ``pages`` для search_listings/scan_new_listings: каждая
+# страница — до AVITO_MAX_ROTATE_ATTEMPTS ротаций IP + платные spfa-куки.
+# Верхняя граница отбивает ошибочный/галлюцинированный pages=500 на границе
+# аргументов схемы, а не многочасовым прогоном в теле тулзы.
+PageCount = Annotated[
+    int,
+    Field(
+        ge=1,
+        le=20,
+        description="Сколько страниц каталога обойти (обход прекращается на последней странице сам)",
+    ),
+]
 
 
 class FilterSpec(BaseModel):

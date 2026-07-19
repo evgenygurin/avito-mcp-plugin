@@ -6,6 +6,7 @@ import asyncio
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from ..config import build_http_client
 from ..models import Listing
@@ -16,7 +17,9 @@ from ..utils import extract_listing_id
 def register(mcp: FastMCP) -> None:
     """Зарегистрировать тулзу деталей объявления на инстансе FastMCP."""
 
-    @mcp.tool
+    @mcp.tool(
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    )
     async def get_listing(
         id_or_url: str,
         ctx: Context,

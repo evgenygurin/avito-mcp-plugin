@@ -155,3 +155,43 @@ async def test_search_listings_errors_on_non_ok(monkeypatch) -> None:
             await client.call_tool(
                 "search_listings", {"url": "https://www.avito.ru/nn"}
             )
+
+
+async def test_pages_schema_has_sane_bounds() -> None:
+    # Context7-аудит: каждая страница — до 18 ротаций IP + платные spfa-куки.
+    # Ошибочный pages=500 от модели уходит в многочасовой прогон, неотличимый
+    # от зависания — граница должна отбивать это на уровне схемы аргументов.
+    async with Client(_mcp()) as client:
+        tools = await client.list_tools()
+    tool = next(t for t in tools if t.name == "search_listings")
+    pages_schema = tool.inputSchema["properties"]["pages"]
+    assert pages_schema.get("minimum") == 1
+    assert pages_schema.get("maximum") is not None
+
+
+async def test_pages_out_of_bounds_rejected_at_argument_boundary(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(
+        search_mod, "fetch_catalog", lambda client, url: ("ok", CATALOG)
+    )
+
+    async with Client(_mcp()) as client:
+        with pytest.raises(ToolError):
+            await client.call_tool(
+                "search_listings", {"url": "https://www.avito.ru/nn", "pages": 500}
+            )
+
+
+async def test_max_age_has_parameter_description() -> None:
+    # Context7-аудит: ни один из 9 параметров не нёс description — max_age
+    # голый integer без единицы, модель, читающая только прозу докстринга
+    # вольно, могла прислать дни/timestamp вместо секунд, и фильтр молча
+    # исключил бы всё без единой ошибки.
+    async with Client(_mcp()) as client:
+        tools = await client.list_tools()
+    tool = next(t for t in tools if t.name == "search_listings")
+    max_age_schema = tool.inputSchema["properties"]["max_age"]
+    assert "секунд" in max_age_schema.get("description", "").lower()

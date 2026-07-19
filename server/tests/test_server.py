@@ -5,6 +5,34 @@ from fastmcp import Client
 from avito_mcp_server.server import mcp
 
 
+async def test_tool_annotations_match_side_effects() -> None:
+    # Context7-аудит (fastmcp 3.4.4): без аннотаций MCP-клиенты, чтящие хинты,
+    # просят подтверждение даже у чистых чтений (болезненно для пагинации), а
+    # реально деструктивные тулзы (запись файла, необратимое сообщение
+    # третьим лицам) не несут никакого сигнала.
+    read_only = {
+        "search_listings",
+        "get_listing",
+        "check_proxy_health",
+        "scan_new_listings",
+        "get_price_history",
+    }
+    destructive = {"export_listings", "send_notification"}
+
+    async with Client(mcp) as client:
+        tools = {t.name: t for t in await client.list_tools()}
+
+    for name in read_only:
+        annotations = tools[name].annotations
+        assert annotations is not None, f"{name}: нет аннотаций"
+        assert annotations.readOnlyHint is True, f"{name}: readOnlyHint"
+
+    for name in destructive:
+        annotations = tools[name].annotations
+        assert annotations is not None, f"{name}: нет аннотаций"
+        assert annotations.destructiveHint is True, f"{name}: destructiveHint"
+
+
 async def test_server_instantiates_and_serves_skills() -> None:
     async with Client(mcp) as client:
         names = {t.name for t in await client.list_tools()}

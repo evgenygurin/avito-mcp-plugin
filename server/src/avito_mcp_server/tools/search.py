@@ -6,9 +6,10 @@ import asyncio
 
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from ..config import build_http_client, page_pause
-from ..filters.filters import FilterSpec, apply_filters
+from ..filters.filters import FilterSpec, PageCount, apply_filters
 from ..http.client import fetch_catalog
 from ..models import Listing, SearchResult
 from ..parser import walk_pages
@@ -17,7 +18,9 @@ from ..parser import walk_pages
 def register(mcp: FastMCP) -> None:
     """Зарегистрировать тулзу поиска на инстансе FastMCP."""
 
-    @mcp.tool
+    @mcp.tool(
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    )
     async def search_listings(
         url: str,
         ctx: Context,
@@ -28,18 +31,29 @@ def register(mcp: FastMCP) -> None:
         price_max: float | None = None,
         geo: str | None = None,
         max_age: int | None = None,
-        pages: int = 1,
+        pages: PageCount = 1,
     ) -> SearchResult:
         """Собрать публичные объявления Avito по ссылке на каталог.
 
         Use when пользователь хочет найти/сравнить объявления по ссылке на каталог
         Avito (напр. категория недвижимости города). Возвращает фактические поля
-        (заголовок, цена, адрес, url) — БЕЗ ПДн продавцов.
-        ``pages`` — сколько страниц каталога обойти (по умолчанию 1, ~50 объявлений
-        на страницу); обход прекращается на последней странице сам.
-        Опциональные фильтры: include/exclude ключевые слова (по заголовку),
-        seller_blacklist, price_min/max, geo (подстрока адреса), max_age (секунды).
-        Требует настроенных прокси/кук — см. .env.example.
+        (заголовок, цена, адрес, url) — БЕЗ ПДн продавцов. Требует настроенных
+        прокси/кук — см. .env.example.
+
+        Args:
+            url: ссылка на каталог Avito (категория/город).
+            include_keywords: оставить только объявления с одним из этих слов
+                в заголовке (регистр не важен).
+            exclude_keywords: отбросить объявления с любым из этих слов в
+                заголовке.
+            seller_blacklist: отбросить объявления этих продавцов (seller_id).
+            price_min: минимальная цена включительно.
+            price_max: максимальная цена включительно.
+            geo: подстрока адреса объявления (район, улица).
+            max_age: максимальный возраст объявления в СЕКУНДАХ с момента
+                публикации (не дни и не unix-timestamp).
+            pages: сколько страниц каталога обойти; обход прекращается на
+                последней странице сам.
         """
         spec = FilterSpec.from_optional(
             include_keywords=include_keywords,

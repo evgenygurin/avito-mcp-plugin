@@ -44,3 +44,14 @@ async def test_send_notification_vk(monkeypatch) -> None:
 
     assert res.data.sent is True
     assert res.data.channel == "vk"
+
+
+async def test_channel_schema_is_enum_not_free_string() -> None:
+    # Context7-аудит: channel как голый str не несёт enum — "tg" вместо
+    # "telegram" жжёт реальный вызов к Telegram/VK на ToolError вместо
+    # отбоя на границе аргументов.
+    async with Client(_mcp()) as client:
+        tools = await client.list_tools()
+    tool = next(t for t in tools if t.name == "send_notification")
+    channel_schema = tool.inputSchema["properties"]["channel"]
+    assert set(channel_schema.get("enum", [])) == {"telegram", "vk"}

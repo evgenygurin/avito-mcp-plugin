@@ -7,6 +7,8 @@ import logging
 import os
 
 from fastmcp import Context, FastMCP
+from fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from ..config import DEFAULT_COOKIE_PROVIDER, build_http_client
 from ..http.client import HttpClient
@@ -23,7 +25,9 @@ _PROBE_URL = "https://www.avito.ru/nizhniy_novgorod/kvartiry/prodam"
 def register(mcp: FastMCP) -> None:
     """Зарегистрировать диагностическую тулзу на инстансе FastMCP."""
 
-    @mcp.tool
+    @mcp.tool(
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    )
     async def check_proxy_health(
         ctx: Context,
         probe_url: str = _PROBE_URL,
@@ -88,4 +92,10 @@ def register(mcp: FastMCP) -> None:
                 detail=detail,
             )
 
-        return await asyncio.to_thread(_run)
+        try:
+            return await asyncio.to_thread(_run)
+        except Exception as exc:
+            # build_http_client() может бросить ДО входа в _probe (напр.
+            # ValueError "пул прокси пуст") — единая ToolError-граница, как у
+            # остальных 6 тулз, вместо белой вороны в контракте ошибок.
+            raise ToolError(f"не удалось проверить прокси: {exc}") from exc
