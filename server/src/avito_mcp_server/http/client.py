@@ -33,8 +33,8 @@ def _sleep(seconds: float) -> None:
     time.sleep(seconds)
 
 
-def _build_session(proxy_url: str | None) -> Any:
-    session: Any = cffi.Session(impersonate=cast(Any, random.choice(_IMPERSONATE)))
+def _build_session(proxy_url: str | None, impersonate: str) -> Any:
+    session: Any = cffi.Session(impersonate=cast(Any, impersonate))
     # User-Agent НЕ переопределяем: impersonate уже выставил UA, Sec-Ch-Ua и
     # платформу, согласованные с TLS-отпечатком профиля. Ручной Windows-Chrome
     # UA поверх случайного профиля (включая safari) даёт противоречие, по
@@ -63,6 +63,12 @@ class HttpClient:
         self.timeout = timeout
         self.block_codes = block_codes
         self.backoff_cap = backoff_cap
+        # Выбирается один раз на клиент, а не на попытку/запрос: fetch_catalog
+        # делает несколько client.get() подряд в рамках одной логической
+        # цепочки (исходный URL + редирект-хоп), и разные TLS/JA3-отпечатки на
+        # соседних запросах — противоречие, которого настоящий браузер не
+        # допускает (см. комментарий у _build_session про UA/impersonate).
+        self._impersonate = random.choice(_IMPERSONATE)
 
     def get(self, url: str, max_attempts: int | None = None) -> Any:
         """GET с ротацией IP до чистого. Возвращает 200-ответ или бросает RuntimeError.
@@ -77,7 +83,9 @@ class HttpClient:
         for attempt in range(1, limit + 1):
             log.info("GET %s (попытка %s/%s)", url, attempt, limit)
             try:
-                with _build_session(self.proxy.httpx_proxy()) as session:
+                with _build_session(
+                    self.proxy.httpx_proxy(), self._impersonate
+                ) as session:
                     resp = session.get(
                         url, cookies=cookies, timeout=self.timeout, allow_redirects=True
                     )

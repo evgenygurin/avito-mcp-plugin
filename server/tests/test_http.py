@@ -48,7 +48,9 @@ class _FakeProxy:
 
 def test_rotate_until_clean(monkeypatch) -> None:
     _FakeSession.seq = [_Resp(403), _Resp(403), _Resp(200, "<html>ok</html>")]
-    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
     proxy = _FakeProxy()
     client = HttpClient(proxy=proxy, cookies=None, max_attempts=5, wait_after_rotate=0)
     resp = client.get("https://www.avito.ru/x")
@@ -61,7 +63,9 @@ def test_get_retries_on_transport_error(monkeypatch) -> None:
     # ротации на новый IP валил весь процесс — ретрай ловил только коды
     # блокировки (401/403/429), а не транспортные ошибки соединения.
     _FakeSession.seq = [CffiTimeout("timed out"), _Resp(200, "<html>ok</html>")]
-    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
     proxy = _FakeProxy()
     client = HttpClient(proxy=proxy, cookies=None, max_attempts=3, wait_after_rotate=0)
     resp = client.get("https://www.avito.ru/x")
@@ -73,7 +77,9 @@ def test_get_raises_after_max_attempts_on_persistent_transport_error(
     monkeypatch,
 ) -> None:
     _FakeSession.seq = [CffiTimeout("timed out") for _ in range(5)]
-    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
     client = HttpClient(
         proxy=_FakeProxy(), cookies=None, max_attempts=3, wait_after_rotate=0
     )
@@ -87,7 +93,9 @@ def test_get_reraises_configuration_errors_without_retry(monkeypatch) -> None:
     # не сетевая случайность. Ротация IP её не лечит, поэтому не тратим на
     # неё попытки и не маскируем под общий "нужен чистый RU-прокси".
     _FakeSession.seq = [CffiInvalidProxyURL("bad proxy url")]
-    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
     proxy = _FakeProxy()
     client = HttpClient(proxy=proxy, cookies=None, max_attempts=5, wait_after_rotate=0)
     with pytest.raises(CffiInvalidProxyURL):
@@ -97,7 +105,9 @@ def test_get_reraises_configuration_errors_without_retry(monkeypatch) -> None:
 
 def test_get_raises_after_max_attempts(monkeypatch) -> None:
     _FakeSession.seq = [_Resp(403) for _ in range(10)]
-    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
     client = HttpClient(
         proxy=_FakeProxy(), cookies=None, max_attempts=3, wait_after_rotate=0
     )
@@ -135,7 +145,9 @@ def test_get_honors_max_attempts_override(monkeypatch) -> None:
     # Один и тот же 403 навсегда: без override клиент ушёл бы за пределы
     # заготовленной очереди ответов (IndexError) вместо ожидаемого RuntimeError.
     _FakeSession.seq = [_Resp(403)]
-    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
     client = HttpClient(
         proxy=_FakeProxy(), cookies=None, max_attempts=18, wait_after_rotate=0
     )
@@ -215,7 +227,9 @@ def test_backoff_grows_and_caps(monkeypatch) -> None:
     # либо слишком агрессивно на десятой. Пауза должна расти и упираться в потолок.
     _FakeSession.seq = [_Resp(403) for _ in range(10)]
     waited: list[float] = []
-    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
     monkeypatch.setattr(hc, "_sleep", waited.append)
 
     client = HttpClient(
@@ -234,7 +248,9 @@ def test_backoff_grows_and_caps(monkeypatch) -> None:
 def test_backoff_disabled_when_wait_is_zero(monkeypatch) -> None:
     _FakeSession.seq = [_Resp(403) for _ in range(5)]
     waited: list[float] = []
-    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
     monkeypatch.setattr(hc, "_sleep", waited.append)
 
     client = HttpClient(
@@ -257,6 +273,32 @@ def test_session_does_not_override_impersonated_user_agent() -> None:
     # impersonate подставляет UA/Sec-Ch-Ua, согласованные с TLS-отпечатком.
     # Ручной Windows-Chrome UA поверх случайного профиля даёт противоречие:
     # заголовки говорят одно, отпечаток TLS — другое.
-    session = hc._build_session(None)
+    session = hc._build_session(None, "chrome")
     ua = {k.lower(): v for k, v in dict(session.headers).items()}.get("user-agent")
     assert ua is None or "Windows NT 10.0" not in ua
+
+
+def test_impersonate_profile_is_fixed_per_client(monkeypatch) -> None:
+    # A4 (Context7-аудит): профиль (TLS/JA3/UA) выбирался заново на КАЖДУЮ
+    # попытку внутри одного client.get(), а fetch_catalog делает несколько
+    # client.get() подряд (исходный URL + редирект-хоп) — с вероятностью 50%
+    # они уходили с разными семействами отпечатков в рамках одной логической
+    # цепочки, чего реальный браузер не делает. Профиль должен фиксироваться
+    # один раз на инстанс HttpClient.
+    _FakeSession.seq = [_Resp(403), _Resp(200, "<html>ok</html>")]
+    seen_profiles: list[str] = []
+
+    def _fake_build_session(proxy_url, impersonate):
+        seen_profiles.append(impersonate)
+        return _FakeSession()
+
+    monkeypatch.setattr(hc, "_build_session", _fake_build_session)
+    client = HttpClient(
+        proxy=_FakeProxy(), cookies=None, max_attempts=5, wait_after_rotate=0
+    )
+    client.get("https://www.avito.ru/x")
+
+    assert len(seen_profiles) == 2  # одна ротация — два вызова _build_session
+    assert seen_profiles[0] == seen_profiles[1], (
+        "профиль должен быть одним и тем же на протяжении всех попыток клиента"
+    )
