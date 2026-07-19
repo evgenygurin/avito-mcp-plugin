@@ -45,26 +45,26 @@ def _reset_fake_client(monkeypatch):
 
 
 def test_telegram_sends() -> None:
-    detail, sent, targets = send_notification(
+    report = send_notification(
         channel="telegram",
         message="test",
         token="tok",
         targets=["123"],
     )
-    assert sent is True
-    assert targets == ["123"]
-    assert detail == "ok"
+    assert report.sent is True
+    assert report.delivered == ["123"]
+    assert report.detail == "ok"
 
 
 def test_vk_sends() -> None:
-    detail, sent, targets = send_notification(
+    report = send_notification(
         channel="vk",
         message="test",
         token="tok",
         targets=["456"],
     )
-    assert sent is True
-    assert targets == ["456"]
+    assert report.sent is True
+    assert report.delivered == ["456"]
 
 
 def test_unknown_channel_raises() -> None:
@@ -117,15 +117,16 @@ def test_partial_delivery_is_reported_not_swallowed() -> None:
         return _FakeResponse({"ok": True})
 
     _FakeClient.post_fn = staticmethod(_flaky_post)
-    detail, sent, targets = send_notification(
+    report = send_notification(
         channel="telegram", message="привет", token="t", targets=["a", "b", "c"]
     )
 
     # Обход не прерывается на первой ошибке — третий адресат тоже получает.
     assert calls == ["a", "b", "c"]
-    assert targets == ["a", "c"], "в targets только реально доставленные"
-    assert sent is True, "частичная доставка — не полный провал"
-    assert "b" in detail
+    assert report.delivered == ["a", "c"], "в delivered только реально доставленные"
+    assert report.failed == ["b"], "отвалившийся адресат виден отдельным полем"
+    assert report.sent is False, "часть не дошла — это не успех рассылки"
+    assert "b" in report.detail
 
 
 def test_uses_single_client_for_whole_batch() -> None:

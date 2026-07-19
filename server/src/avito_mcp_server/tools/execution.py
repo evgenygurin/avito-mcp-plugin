@@ -9,9 +9,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 
 from fastmcp.exceptions import ToolError
+
+log = logging.getLogger(__name__)
 
 
 async def run_blocking[T](action: Callable[[], T], *, failure: str) -> T:
@@ -31,4 +34,10 @@ async def run_blocking[T](action: Callable[[], T], *, failure: str) -> T:
     except ToolError:
         raise
     except Exception as exc:
-        raise ToolError(f"{failure}: {exc}") from exc
+        # Трейсбек остаётся в логе сервера: ToolError клиент видит как
+        # сформулированный отказ, а не как сбой, который стоит расследовать.
+        log.exception("%s", failure)
+        # У таймаутов httpx/asyncio str(exc) пустой — без подстановки типа
+        # пользователь получал бы «не удалось получить объявления: » без причины.
+        detail = str(exc) or type(exc).__name__
+        raise ToolError(f"{failure}: {detail}") from exc

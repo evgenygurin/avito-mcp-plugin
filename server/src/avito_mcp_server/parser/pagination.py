@@ -61,7 +61,11 @@ def walk_pages(
         log.info("страница %s/%s: %s", index + 1, total, page_url)
         kind, catalog = fetch(client, page_url)
         if kind != PageKind.OK:
-            raise RuntimeError(explain_status(kind))
+            # Номер страницы и URL — в тексте ошибки: при pages>1 без них
+            # падение на седьмой странице неотличимо от падения на первой.
+            raise RuntimeError(
+                f"{explain_status(kind)} — страница {index + 1}/{total}: {page_url}"
+            )
         # Каталог сдвигается между запросами — дедуп по id обязателен.
         for listing in extract_facts(catalog):
             if listing.id not in seen:

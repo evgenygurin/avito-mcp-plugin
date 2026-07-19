@@ -46,14 +46,18 @@ def register(mcp: FastMCP) -> None:
             # Какие env-переменные читать, знает сам канал — тулза не хранит
             # копию соответствия «канал → токен/адресаты».
             notifier = get_notifier(channel)
-            detail, sent, actual_targets = do_send(
+            report = do_send(
                 channel=channel,
                 message=message,
                 token=os.getenv(notifier.token_env),
                 targets=_resolve_targets(targets, notifier.targets_env),
             )
             return NotificationResult(
-                channel=channel, sent=sent, targets=actual_targets, detail=detail
+                channel=channel,
+                sent=report.sent,
+                targets=report.delivered,
+                failed=report.failed,
+                detail=report.detail,
             )
 
         return await run_blocking(_run, failure="не удалось отправить уведомление")

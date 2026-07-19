@@ -43,12 +43,18 @@ def _build_playwright(settings: CookieSettings) -> CookiesProvider:
     return PlaywrightCookiesProvider(proxy=settings.proxy)
 
 
+def _build_none(settings: CookieSettings) -> CookiesProvider | None:
+    """Явный отказ от кук — осознанный выбор, а не следствие опечатки."""
+    return None
+
+
 #: Имя из env → сборщик. Новый провайдер добавляется строкой здесь, а не
 #: очередной веткой в ``build_cookies_provider``.
-_PROVIDERS: dict[str, Callable[[CookieSettings], CookiesProvider]] = {
+_PROVIDERS: dict[str, Callable[[CookieSettings], CookiesProvider | None]] = {
     "spfa": _build_spfa,
     "own": _build_own,
     "playwright": _build_playwright,
+    "none": _build_none,
 }
 
 
@@ -59,10 +65,22 @@ def build_cookies_provider(
     own_cookies: dict[str, str] | None,
     proxy: str | None = None,
 ) -> CookiesProvider | None:
-    """Собрать провайдера кук по имени; ``None`` — имя неизвестно (работаем без кук)."""
+    """Собрать провайдера кук по имени из ``AVITO_COOKIE_PROVIDER``.
+
+    ``None`` возвращается только для явного ``none``. Опечатка в имени —
+    ошибка конфигурации, а не молчаливая работа без кук: без кук антибот
+    отдаёт блокировки, и rotate-until-clean жжёт 18 ротаций платного прокси,
+    показывая диагноз «нужен чистый RU-прокси» вместо настоящей причины.
+
+    Raises:
+        ValueError: имя провайдера неизвестно.
+    """
     build = _PROVIDERS.get(provider)
     if build is None:
-        return None
+        supported = "|".join(_PROVIDERS)
+        raise ValueError(
+            f"неизвестный провайдер кук: {provider!r} (AVITO_COOKIE_PROVIDER={supported})"
+        )
     return build(CookieSettings(api_key=api_key, own_cookies=own_cookies, proxy=proxy))
 
 

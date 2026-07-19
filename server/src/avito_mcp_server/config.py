@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .cookies.factory import build_cookies_provider
 from .http.client import HttpClient
 from .proxies.factory import build_proxy, fetch_proxy_list
-from .storage.base import ProxyCooldownStore
+from .storage.base import ListingStore, ProxyCooldownStore
 from .storage.supabase import SupabaseStorage
 
 log = logging.getLogger(__name__)
@@ -62,8 +62,8 @@ def build_http_client() -> HttpClient:
     return HttpClient(proxy=proxy, cookies=provider, max_attempts=max_attempts)
 
 
-def build_storage() -> SupabaseStorage:
-    """Собрать хранилище (Postgres проекта Supabase) из окружения.
+def _storage_from_env() -> SupabaseStorage:
+    """Хранилище по ``AVITO_SUPABASE_DSN``.
 
     Raises:
         ValueError: если ``AVITO_SUPABASE_DSN`` не задан.
@@ -75,6 +75,18 @@ def build_storage() -> SupabaseStorage:
             "(Project Settings → Database → Connection string)"
         )
     return SupabaseStorage(dsn)
+
+
+def build_storage() -> ListingStore:
+    """Собрать хранилище (Postgres проекта Supabase) из окружения.
+
+    Тип возврата — протокол, а не конкретный класс: тулзы мониторинга работают
+    через него, и подмена хранилища в тестах проверяется типами.
+
+    Raises:
+        ValueError: если ``AVITO_SUPABASE_DSN`` не задан.
+    """
+    return _storage_from_env()
 
 
 def page_pause() -> float:
@@ -99,7 +111,7 @@ def _optional_storage() -> ProxyCooldownStore | None:
     if not os.getenv("AVITO_SUPABASE_DSN", "").strip():
         return None
     try:
-        return build_storage()
+        return _storage_from_env()
     except (ValueError, SQLAlchemyError) as exc:
         log.warning("память о блокировках прокси недоступна: %s", exc)
         return None

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Literal
 
 import httpx
@@ -23,14 +24,38 @@ _Delivery = tuple[str, bool, str]
 _TIMEOUT = 15.0
 
 
-def _deliver(targets: list[str], send_one: Callable[[str], None]) -> list[_Delivery]:
+# Ниже этой длины «секрет» — не секрет, а фрагмент, который встречается в
+# обычном тексте (в тестах токен бывает односимвольным). Слепая замена такой
+# подстроки изуродовала бы диагностику: «User au***horiza***ion failed».
+_MIN_SECRET_LEN = 8
+
+
+def _describe_failure(exc: Exception, secret: str) -> str:
+    """Текст ошибки доставки БЕЗ учётных данных.
+
+    Telegram кладёт токен прямо в путь URL, а ``httpx.HTTPStatusError`` печатает
+    URL целиком — без этого протухший токен уехал бы в ответ тулзы, в контекст
+    модели и в логи MCP-клиента. Поэтому для HTTP-ошибок сообщение строим сами
+    (статус + хост), а не берём готовую строку исключения.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code} от {exc.request.url.host}"
+    text = str(exc) or type(exc).__name__
+    if secret and len(secret) >= _MIN_SECRET_LEN:
+        text = text.replace(secret, "***")
+    return text
+
+
+def _deliver(
+    targets: list[str], send_one: Callable[[str], None], secret: str = ""
+) -> list[_Delivery]:
     """Отправить каждому адресату независимо — сбой одного не отменяет остальных."""
     results: list[_Delivery] = []
     for target in targets:
         try:
             send_one(target)
         except Exception as exc:  # noqa: BLE001 — сбой одного не отменяет остальных
-            results.append((target, False, str(exc)))
+            results.append((target, False, _describe_failure(exc, secret)))
         else:
             results.append((target, True, "ok"))
     return results
@@ -56,7 +81,9 @@ class Notifier(ABC):
             raise ValueError(f"{self.targets_env} не задан")
         with httpx.Client(timeout=_TIMEOUT, trust_env=False) as client:
             return _deliver(
-                targets, lambda target: self._send_one(client, token, target, text)
+                targets,
+                lambda target: self._send_one(client, token, target, text),
+                secret=token,
             )
 
     @abstractmethod
@@ -126,40 +153,62 @@ def get_notifier(channel: str) -> Notifier:
     return notifier
 
 
+@dataclass(frozen=True)
+class DeliveryReport:
+    """Итог рассылки по адресатам."""
+
+    detail: str
+    delivered: list[str]
+    failed: list[str]
+
+    @property
+    def sent(self) -> bool:
+        """Дошло ли ВСЕМ адресатам.
+
+        Именно «всем», а не «хоть кому-то»: агент проверяет булево поле, и при
+        ``sent=True`` с молча отвалившимся адресатом мониторинг неделями
+        отправляет уведомления в никуда, а сигнала об этом нет нигде, кроме
+        прозаического ``detail``.
+        """
+        return not self.failed
+
+
 def send_notification(
     channel: str,
     message: str,
     token: str | None = None,
     targets: list[str] | None = None,
-) -> tuple[str, bool, list[str]]:
+) -> DeliveryReport:
     """Отправить уведомление в выбранный канал.
 
     Имена env-переменных знает сам канал (``Notifier.token_env`` /
     ``targets_env``), поэтому здесь один токен и один список адресатов вместо
     пары параметров на каждый поддерживаемый мессенджер.
 
-    Returns:
-        (detail, sent, targets) — результат отправки.
+    Raises:
+        ValueError: канал не поддерживается либо не заданы токен/адресаты.
+        RuntimeError: не доставлено ни одному адресату.
     """
     notifier = get_notifier(channel)
     return _summarize(notifier.send(token, targets or [], message))
 
 
-def _summarize(results: list[_Delivery]) -> tuple[str, bool, list[str]]:
+def _summarize(results: list[_Delivery]) -> DeliveryReport:
     """Свести доставку по адресатам: что дошло, что нет.
 
     Частичный успех — не полный провал: адресаты, которым сообщение ушло, не
-    должны получать его повторно из-за сбоя на соседе.
+    должны получать его повторно из-за сбоя на соседе. Но и успехом он не
+    считается — провалившиеся адресаты видны в ``failed``.
     """
     delivered = [target for target, ok, _ in results if ok]
-    failed = [(target, detail) for target, ok, detail in results if not ok]
-    if not failed:
-        return ("ok", True, delivered)
-    problems = "; ".join(f"{target}: {detail}" for target, detail in failed)
+    failures = [(target, detail) for target, ok, detail in results if not ok]
+    if not failures:
+        return DeliveryReport(detail="ok", delivered=delivered, failed=[])
+    problems = "; ".join(f"{target}: {detail}" for target, detail in failures)
     if not delivered:
         raise RuntimeError(f"не доставлено ни одному адресату — {problems}")
-    return (
-        f"доставлено {len(delivered)} из {len(results)}; ошибки — {problems}",
-        True,
-        delivered,
+    return DeliveryReport(
+        detail=f"доставлено {len(delivered)} из {len(results)}; ошибки — {problems}",
+        delivered=delivered,
+        failed=[target for target, _ in failures],
     )

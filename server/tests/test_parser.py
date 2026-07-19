@@ -191,18 +191,60 @@ def test_page_kind_compares_with_plain_strings() -> None:
     assert f"{kind}" == "nojson"
 
 
-def test_explain_status_covers_every_kind() -> None:
-    # Каждый статус обязан иметь человекочитаемый диагноз: без него оператор
-    # видит только код и не понимает, менять IP или куки.
-    from avito_mcp_server.parser import PageKind, explain_status
-
-    for kind in PageKind:
-        if kind is PageKind.OK:
-            continue
-        assert explain_status(kind) != f"страница не отдала каталог (статус: {kind})"
-
-
 def test_explain_status_survives_unknown_kind() -> None:
     from avito_mcp_server.parser import explain_status
 
     assert "статус: странное" in explain_status("странное")
+
+
+def _page_with_state(state: dict) -> str:
+    """Собрать страницу с встроенным SSR-состоянием (как отдаёт Avito)."""
+    import html as html_lib
+    import json
+
+    payload = html_lib.escape(json.dumps(state, ensure_ascii=False))
+    return (
+        '<html><body><script type="mime/invalid" data-mfe-state="true">'
+        f"{payload}</script></body></html>"
+    )
+
+
+def test_state_without_items_is_softblock() -> None:
+    # 200 + состояние есть, но каталог пуст — поведенческий флаг антибота, а не
+    # отсутствие данных: диагноз «смени IP/куки», а не «нет встроенного JSON».
+    # Раньше этот статус производился только моками тулз, а сам classify его
+    # ни в одном тесте не возвращал.
+    from avito_mcp_server.parser import PageKind
+
+    html = _page_with_state(
+        {
+            "i18n": {"hasMessages": True},
+            "loaderData": {"data": {"catalog": {"items": []}}},
+        }
+    )
+    assert classify(html) == (PageKind.SOFTBLOCK, None)
+
+
+def test_state_without_catalog_key_is_softblock() -> None:
+    from avito_mcp_server.parser import PageKind
+
+    html = _page_with_state(
+        {"i18n": {"hasMessages": True}, "loaderData": {"data": {"somethingElse": 1}}}
+    )
+    assert classify(html)[0] is PageKind.SOFTBLOCK
+
+
+def test_every_kind_has_a_hint() -> None:
+    # Инвариант, а не совпадение строки: прежняя формулировка теста сравнивала
+    # результат с текстом фоллбэка и молча ослабла бы при его правке.
+    from avito_mcp_server.parser import PageKind
+    from avito_mcp_server.parser.state import _STATUS_HINTS
+
+    assert set(_STATUS_HINTS) == set(PageKind) - {PageKind.OK}
+
+
+def test_hint_is_embedded_in_the_message() -> None:
+    from avito_mcp_server.parser import PageKind, explain_status
+
+    msg = explain_status(PageKind.FIREWALL)
+    assert "AVITO_PROXY" in msg and "статус: firewall" in msg

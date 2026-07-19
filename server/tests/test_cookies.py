@@ -351,10 +351,20 @@ def test_provider_registry_covers_documented_names() -> None:
     # AVITO_COOKIE_PROVIDER молча даёт работу без кук.
     from avito_mcp_server.cookies.factory import _PROVIDERS
 
-    assert set(_PROVIDERS) == {"spfa", "own", "playwright"}
+    assert set(_PROVIDERS) == {"spfa", "own", "playwright", "none"}
 
 
-def test_unknown_provider_returns_none() -> None:
+def test_unknown_provider_is_a_config_error() -> None:
+    # Опечатка в AVITO_COOKIE_PROVIDER раньше давала тихую работу без кук:
+    # 18 ротаций платного прокси и диагноз «нужен чистый RU-прокси» вместо
+    # настоящей причины.
     from avito_mcp_server.cookies.factory import build_cookies_provider
 
-    assert build_cookies_provider("нет-такого", api_key="k", own_cookies={}) is None
+    with pytest.raises(ValueError, match="неизвестный провайдер кук"):
+        build_cookies_provider("playwrite", api_key="k", own_cookies={})
+
+
+def test_explicit_none_disables_cookies() -> None:
+    from avito_mcp_server.cookies.factory import build_cookies_provider
+
+    assert build_cookies_provider("none", api_key=None, own_cookies={}) is None

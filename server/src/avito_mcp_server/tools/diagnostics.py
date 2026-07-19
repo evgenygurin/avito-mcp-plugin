@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-import os
 
 from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
-from ..config import DEFAULT_COOKIE_PROVIDER, build_http_client
+from ..config import build_http_client
 from ..http.client import HttpClient, fetch_catalog
 from ..models import ProxyHealth, ProxyProbe
 from ..parser import PageKind, explain_status
@@ -41,7 +40,6 @@ def register(mcp: FastMCP) -> None:
         до массового парсинга. Возвращает конфиг и результат пробного запроса; при
         блокировке НЕ бросает ошибку — это валидный диагноз (``ok=false``).
         """
-        provider = os.getenv("AVITO_COOKIE_PROVIDER", DEFAULT_COOKIE_PROVIDER)
         await ctx.info(f"check_proxy_health: {probe_url}")
 
         def _probe(client: HttpClient, url: str) -> tuple[bool, str]:
@@ -55,6 +53,14 @@ def register(mcp: FastMCP) -> None:
         def _run() -> ProxyHealth:
             client = build_http_client()
             proxy_type = type(client.proxy).__name__
+            # Что РЕАЛЬНО собралось, а не что написано в env: диагностика
+            # обязана показывать фактическую связку, иначе тулза, созданная
+            # искать проблему с куками, сама её маскирует.
+            provider = (
+                type(client.cookies).__name__
+                if client.cookies is not None
+                else "нет (куки отключены)"
+            )
             probes: list[ProxyProbe] = []
 
             pool = client.proxy if isinstance(client.proxy, ProxyPool) else None

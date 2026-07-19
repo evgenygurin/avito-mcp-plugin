@@ -30,7 +30,7 @@ async def test_check_proxy_health_ok(monkeypatch) -> None:
         res = await client.call_tool("check_proxy_health", {})
 
     assert res.data.ok is True
-    assert res.data.cookie_provider == "own"
+    assert res.data.cookie_provider == "нет (куки отключены)"
     assert res.data.proxy_type == "NoProxy"
 
 
@@ -132,3 +132,19 @@ async def test_probe_verdicts_stick_to_their_own_proxy(monkeypatch) -> None:
     verdicts = {p.proxy: p.ok for p in res.data.probes}
     assert verdicts["dead:1"] is False, "мёртвый адрес не может быть живым"
     assert verdicts["alive:2"] is True
+
+
+async def test_probe_failure_is_a_diagnosis_not_a_tool_error(monkeypatch) -> None:
+    # Единственное место, где исключение НЕ становится ToolError: для тулзы
+    # диагностики сбой запроса — это валидный ответ «связка нерабочая».
+    def _boom(client, url):
+        raise RuntimeError("прокси не отвечает")
+
+    monkeypatch.setattr(diag_mod, "build_http_client", lambda: _FakeClient())
+    monkeypatch.setattr(diag_mod, "fetch_catalog", _boom)
+
+    async with Client(_mcp()) as client:
+        res = await client.call_tool("check_proxy_health", {})
+
+    assert res.data.ok is False
+    assert "прокси не отвечает" in res.data.detail

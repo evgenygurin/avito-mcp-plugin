@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 import httpx
 
 from ..storage.base import ProxyCooldownStore
+from ..utils import mask_proxy
 
 log = logging.getLogger(__name__)
 
@@ -121,7 +122,8 @@ class ProxyPool(Proxy):
             return
         for offset in range(len(self.urls)):
             candidate = (self._index + offset) % len(self.urls)
-            if self.urls[candidate] not in blocked:
+            # Сверяем по тому же ключу, каким писали, — маскированному адресу.
+            if mask_proxy(self.urls[candidate]) not in blocked:
                 self._index = candidate
                 return
 
@@ -133,7 +135,11 @@ class ProxyPool(Proxy):
         # чтобы следующий запуск не тратил на него попытки.
         if self.cooldown_store is not None:
             try:
-                self.cooldown_store.mark_proxy_blocked(self.urls[self._index])
+                # В базу — БЕЗ учётных данных: пароль прокси не должен уезжать
+                # в облачный Postgres. Ключ cooldown — host:port.
+                self.cooldown_store.mark_proxy_blocked(
+                    mask_proxy(self.urls[self._index])
+                )
             except Exception as exc:  # noqa: BLE001
                 log.warning("не удалось запомнить блокировку прокси: %s", exc)
         self._index = (self._index + 1) % len(self.urls)
