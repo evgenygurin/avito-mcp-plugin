@@ -18,5 +18,28 @@
     "scraping",
     "fastmcp",
     "python"
-  ]
+  ],
+  "userConfig": {
+    "spfa_api_key": {
+      "type": "string",
+      "title": "SPFA API key",
+      "description": "Ключ провайдера кук spfa (AVITO_COOKIE_PROVIDER=spfa). Не обязателен для провайдеров own/playwright.",
+      "sensitive": true,
+      "required": false
+    },
+    "avito_proxy": {
+      "type": "string",
+      "title": "Avito proxy",
+      "description": "user:pass@host:port; список через запятую подключает ProxyPool.",
+      "sensitive": true,
+      "required": false
+    },
+    "avito_supabase_dsn": {
+      "type": "string",
+      "title": "Supabase DSN",
+      "description": "postgresql://... DSN для мониторинга, истории цен и cooldown прокси.",
+      "sensitive": true,
+      "required": false
+    }
+  }
 }
