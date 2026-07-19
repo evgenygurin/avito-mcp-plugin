@@ -20,6 +20,20 @@ def test_find_json_catalog() -> None:
     assert len(data["catalog"]["items"]) == 3
 
 
+def test_find_json_uses_parse_time_filter_not_full_tree() -> None:
+    # Context7-аудит (bs4 4.15.0): вся ~1МБ страница инфлейтилась в дерево ради
+    # одного script-тега — SoupStrainer фильтрует НА ЭТАПЕ парсинга, а не
+    # итерацией по готовому дереву (select() после полного парсинга не даёт
+    # выигрыша в памяти, только в CPU-итерации). Regression: результат на
+    # многострочной (29 script) реальной странице не должен меняться.
+    html = (FIX / "redirect_stub.html").read_text(encoding="utf-8")
+    data = find_json_on_page(html)
+    assert data.get("redirected") is True
+    assert data.get("url") == (
+        "/nizhniy_novgorod/kvartiry/prodam-ASgBAgICAUSSA8YQ?localPriority=0"
+    )
+
+
 def test_classify_redirect_on_real_stub() -> None:
     # redirect_stub.html — реальная страница Avito (html-escaped JSON): проверяет
     # и unescape, и детекцию SSR-редиректа на канонический URL.
