@@ -1,0 +1,184 @@
+"""Хранилище парсера в Postgres (Supabase) через SQLAlchemy ORM.
+
+Единственный бэкенд: dedup объявлений, история цены, cooldown прокси.
+
+Наружу время отдаётся epoch-float — модели тулз (`PricePoint`) ждут число, а не
+``datetime``. Внутри лежит ``timestamptz``, конвертация — на границе.
+"""
+
+from __future__ import annotations
+
+import logging
+from contextlib import suppress
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from sqlalchemy import Engine, create_engine, delete, func, select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session, sessionmaker
+
+from .models import PriceHistory, ProxyCooldown, SeenItem
+
+log = logging.getLogger(__name__)
+
+
+def normalize_dsn(dsn: str) -> str:
+    """Привести DSN Supabase к драйверу psycopg 3 и потребовать TLS.
+
+    Кабинет отдаёт строку вида ``postgresql://…``; SQLAlchemy по умолчанию
+    подставил бы psycopg2, которого в зависимостях нет. Плюс libpq без явного
+    ``sslmode`` использует ``prefer`` — молча откатывается на незашифрованное
+    соединение, что для облачной базы недопустимо.
+    """
+    if dsn.startswith("postgresql://"):
+        dsn = dsn.replace("postgresql://", "postgresql+psycopg://", 1)
+    elif dsn.startswith("postgres://"):
+        dsn = dsn.replace("postgres://", "postgresql+psycopg://", 1)
+
+    if "sslmode=" not in dsn:
+        dsn += ("&" if "?" in dsn else "?") + "sslmode=require"
+    return dsn
+
+
+# Engine кеширован по DSN: build_storage() вызывается на каждый вызов тулзы,
+# а каждый Engine — это отдельный пул соединений, который никто не закрывает.
+_ENGINES: dict[str, Engine] = {}
+
+
+def reset_engine_cache() -> None:
+    """Сбросить кеш движков (для тестов и смены конфигурации)."""
+    for engine in _ENGINES.values():
+        with suppress(Exception):
+            engine.dispose()
+    _ENGINES.clear()
+
+
+def get_engine(dsn: str) -> Engine:
+    """Получить общий Engine для DSN, создав его при первом обращении."""
+    url = normalize_dsn(dsn)
+    engine = _ENGINES.get(url)
+    if engine is None:
+        engine = create_engine(
+            url,
+            # Supabase закрывает простаивающие соединения — без ping первый
+            # запрос после паузы падал бы на мёртвом соединении из пула.
+            pool_pre_ping=True,
+            connect_args={
+                # Transaction pooler Supabase (порт 6543) не поддерживает
+                # prepared statements psycopg — с ними соединение ломается.
+                "prepare_threshold": None,
+                # Без таймаута недоступная база даёт зависание вместо ошибки.
+                "connect_timeout": 10,
+            },
+        )
+        _ENGINES[url] = engine
+    return engine
+
+
+def _epoch(value: Any) -> float:
+    """``timestamptz`` → epoch-float; число отдаём как есть."""
+    return value.timestamp() if isinstance(value, datetime) else float(value)
+
+
+class SupabaseStorage:
+    """Хранилище в схеме ``avito`` проекта Supabase."""
+
+    def __init__(self, dsn: str, engine: Engine | None = None) -> None:
+        self.engine = engine if engine is not None else get_engine(dsn)
+        self._session_factory = sessionmaker(bind=self.engine)
+
+    def _session(self) -> Session:
+        return self._session_factory()
+
+    def upsert_seen(
+        self,
+        item_id: int,
+        url: str | None,
+        title: str | None,
+        price: float | None,
+    ) -> bool:
+        """Вставить/обновить объявление. ``True`` — видим впервые.
+
+        Запись объявления и точки истории идут одной транзакцией: иначе при сбое
+        история разъедется с ``seen_items``.
+        """
+        with self._session() as session, session.begin():
+            is_new = session.get(SeenItem, item_id) is None
+            stmt = (
+                insert(SeenItem)
+                .values(
+                    id=item_id,
+                    url=url,
+                    title=title,
+                    price=price,
+                    first_seen=func.now(),
+                    last_seen=func.now(),
+                )
+                .on_conflict_do_update(
+                    index_elements=[SeenItem.id],
+                    set_={
+                        "url": url,
+                        "title": title,
+                        "price": price,
+                        "last_seen": func.now(),
+                    },
+                )
+            )
+            session.execute(stmt)
+            # Без цены точка истории бессмысленна.
+            if price is not None:
+                session.add(PriceHistory(item_id=item_id, price=price))
+        return is_new
+
+    def get_previous_price(self, item_id: int) -> float | None:
+        """Последняя известная цена объявления (или ``None``)."""
+        with self._session() as session:
+            price = session.execute(
+                select(SeenItem.price).where(SeenItem.id == item_id)
+            ).scalar_one_or_none()
+        return None if price is None else float(price)
+
+    def list_seen_ids(self) -> set[int]:
+        with self._session() as session:
+            rows = session.execute(select(SeenItem.id)).scalars().all()
+        return {int(row) for row in rows}
+
+    def get_price_history(self, item_id: int) -> list[tuple[float, float]]:
+        """История цены, свежая первой: список ``(цена, время)``."""
+        with self._session() as session:
+            rows = session.execute(
+                select(PriceHistory.price, PriceHistory.seen_at)
+                .where(PriceHistory.item_id == item_id)
+                .order_by(PriceHistory.seen_at.desc())
+            ).all()
+        return [(float(price), _epoch(seen_at)) for price, seen_at in rows]
+
+    def mark_proxy_blocked(self, proxy: str) -> None:
+        """Запомнить адрес, отдавший блокировку."""
+        with self._session() as session, session.begin():
+            session.execute(
+                insert(ProxyCooldown)
+                .values(proxy=proxy, blocked_at=func.now())
+                .on_conflict_do_update(
+                    index_elements=[ProxyCooldown.proxy],
+                    set_={"blocked_at": func.now()},
+                )
+            )
+
+    def blocked_proxies(self, ttl: float) -> set[str]:
+        """Адреса, заблокированные не позже ``ttl`` секунд назад."""
+        cutoff = datetime.now(UTC) - timedelta(seconds=float(ttl))
+        with self._session() as session:
+            rows = (
+                session.execute(
+                    select(ProxyCooldown.proxy).where(ProxyCooldown.blocked_at > cutoff)
+                )
+                .scalars()
+                .all()
+            )
+        return set(rows)
+
+    def forget_proxy(self, proxy: str) -> None:
+        """Убрать адрес из cooldown (напр. после успешного запроса через него)."""
+        with self._session() as session, session.begin():
+            session.execute(delete(ProxyCooldown).where(ProxyCooldown.proxy == proxy))
