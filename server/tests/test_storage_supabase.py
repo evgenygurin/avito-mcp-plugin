@@ -74,6 +74,13 @@ class TestNormalizeDsn:
         assert "postgresql+psycopg://" in normalize_dsn(dsn)
 
 
+def _purge(storage: SupabaseStorage) -> None:
+    """Убрать тестовые данные из общей базы (id из зарезервированного диапазона)."""
+    with storage.engine.begin() as conn:
+        conn.execute(text("DELETE FROM avito.seen_items WHERE id >= 999000000"))
+        conn.execute(text("DELETE FROM avito.proxy_cooldown WHERE proxy LIKE 'test-%'"))
+
+
 @requires_db
 class TestAgainstPostgres:
     """Поведение против живой базы Supabase."""
@@ -81,13 +88,13 @@ class TestAgainstPostgres:
     @pytest.fixture
     def store(self) -> SupabaseStorage:
         storage = SupabaseStorage(DSN)
+        # Чистим ДО теста, а не только после: база общая и живая, и остатки от
+        # прерванного прогона (или от параллельной сессии) отравляли следующий
+        # — история цены приходила длиннее ожидаемой, и падали разные тесты
+        # при неизменном коде.
+        _purge(storage)
         yield storage
-        # Тестовые данные не должны копиться в общей базе.
-        with storage.engine.begin() as conn:
-            conn.execute(text("DELETE FROM avito.seen_items WHERE id >= 999000000"))
-            conn.execute(
-                text("DELETE FROM avito.proxy_cooldown WHERE proxy LIKE 'test-%'")
-            )
+        _purge(storage)
 
     def test_first_upsert_reports_new_item(self, store: SupabaseStorage) -> None:
         assert store.upsert_seen(999000001, "/x_1", "квартира", 50000.0) is True

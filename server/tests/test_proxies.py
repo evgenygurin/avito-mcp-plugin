@@ -237,3 +237,32 @@ def test_proxy_list_ignores_shell_proxy_env(monkeypatch) -> None:
     )
     factory_mod.fetch_proxy_list("https://api.example/list")
     assert captured.get("trust_env") is False
+
+
+def test_cooldown_key_carries_no_credentials() -> None:
+    # Пароль прокси не должен уезжать в облачный Postgres: в cooldown пишется
+    # host:port, и сверка при следующем запуске идёт по тому же ключу.
+    from avito_mcp_server.proxies.proxy import ProxyPool
+
+    class _Store:
+        def __init__(self) -> None:
+            self.marked: list[str] = []
+
+        def mark_proxy_blocked(self, proxy: str) -> None:
+            self.marked.append(proxy)
+
+        def blocked_proxies(self, ttl: float) -> set[str]:
+            return set(self.marked)
+
+    store = _Store()
+    pool = ProxyPool(["user:secret@1.2.3.4:8000", "user:secret@5.6.7.8:8000"], store)
+    pool.rotate()
+
+    assert store.marked == ["1.2.3.4:8000"], "учётные данные не попадают в базу"
+    # Второй пул на том же хранилище обязан узнать выжженный адрес и встать на другой.
+    assert (
+        ProxyPool(
+            ["user:secret@1.2.3.4:8000", "user:secret@5.6.7.8:8000"], store
+        ).httpx_proxy()
+        == "http://user:secret@5.6.7.8:8000"
+    )

@@ -93,3 +93,10 @@ def test_listing_without_price_fails_range_filter() -> None:
     # «до 1 млн» вернуло бы объявления «цена по запросу».
     items = [_l(1, price=None), _l(2, price=500)]
     assert [i.id for i in apply_filters(items, FilterSpec(price_max=1000))] == [2]
+
+
+def test_listing_without_date_fails_max_age_filter() -> None:
+    # Симметрично цене: без даты объявление не может доказать свою свежесть.
+    items = [_l(1, published_at=None), _l(2, published_at=999_950)]
+    out = apply_filters(items, FilterSpec(max_age=60), now=1_000_000.0)
+    assert [i.id for i in out] == [2]

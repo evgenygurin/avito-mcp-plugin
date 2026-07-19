@@ -236,3 +236,35 @@ class TestGetPriceHistory:
 
         assert res.data.listing_id == 7890298070
         assert res.data.count == 1
+
+
+@pytest.mark.parametrize(
+    ("prev_price", "price", "expect_reported"),
+    [
+        (1000.0, 900.0, True),  # подешевело — единственный повод для отчёта
+        (1000.0, 1000.0, False),  # цена та же
+        (1000.0, 1100.0, False),  # подорожало
+        (None, 900.0, False),  # раньше видели без цены — сравнивать не с чем
+        (1000.0, None, False),  # цена пропала — не считаем это скидкой
+    ],
+)
+def test_changes_reports_only_real_price_drops(
+    prev_price: float | None, price: float | None, expect_reported: bool
+) -> None:
+    # Ядро мониторинга в изоляции: без MCP-клиента и без хранилища.
+    from avito_mcp_server.models import Listing
+    from avito_mcp_server.tools.monitoring import _changes
+
+    items = _changes([Listing(id=1, title="x", price=price)], {1: prev_price})
+    assert bool(items) is expect_reported
+    if expect_reported:
+        assert items[0].is_new is False
+        assert items[0].price_delta == 100.0
+
+
+def test_changes_marks_unknown_listing_as_new() -> None:
+    from avito_mcp_server.models import Listing
+    from avito_mcp_server.tools.monitoring import _changes
+
+    (item,) = _changes([Listing(id=7, title="x", price=None)], {})
+    assert item.is_new is True and item.price_delta is None

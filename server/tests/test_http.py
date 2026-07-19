@@ -339,3 +339,22 @@ def test_impersonate_profile_is_fixed_per_client(monkeypatch) -> None:
     assert seen_profiles[0] == seen_profiles[1], (
         "профиль должен быть одним и тем же на протяжении всех попыток клиента"
     )
+
+
+def test_fetch_catalog_gives_up_with_redirect_loop(monkeypatch) -> None:
+    # Страница вечно редиректит: бюджет глубины обязан закончиться понятным
+    # статусом, а не бесконечным хождением по кругу.
+    from avito_mcp_server.parser import PageKind
+
+    hops: list[str] = []
+
+    class _Client:
+        def get(self, url: str, max_attempts: int | None = None):
+            hops.append(url)
+            return type("R", (), {"text": ""})()
+
+    monkeypatch.setattr(hc, "classify", lambda text: (PageKind.REDIRECT, "/next-hop"))
+    kind, payload = fetch_catalog(_Client(), "https://www.avito.ru/x", max_redirects=2)
+
+    assert (kind, payload) == (PageKind.REDIRECT_LOOP, None)
+    assert len(hops) == 3, "исходный запрос + ровно max_redirects хопов"
