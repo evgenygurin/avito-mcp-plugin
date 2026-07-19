@@ -8,7 +8,7 @@ Avito. Движок реализует полнофункциональный п
 Дизайн целиком —
 [`specs/2026-07-18-avito-parser-design.md`](superpowers/specs/2026-07-18-avito-parser-design.md);
 how-to для агента — скил [`scraping-avito`](../skills/scraping-avito/SKILL.md).
-Тулзы, использующие движок, пока в статусе «🔜 план» (код ещё не написан).
+Тулзы, использующие движок, реализованы; сетевую часть не проверить без чистого RU-прокси.
 
 ## TL;DR — конвейер
 
@@ -104,7 +104,8 @@ loaderData.data.catalog.items  →  list[Listing]
 ```
 
 Каждый item нормализуется в модель `Listing` (id, title, price, url, address,
-params, seller_id, is_promotion, published_at; `views` — если задан `parse_views`).
+params, seller_id, is_promotion, published_at (epoch-секунды); `views` — только
+у `get_listing` при `with_views`).
 Модель хранит **только фактические поля**; телефоны продавцов не собираются —
 функция извлечения телефона (`parse_phone`) в движок намеренно не портирована
 (ПДн третьих лиц).

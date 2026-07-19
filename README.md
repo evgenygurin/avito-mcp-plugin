@@ -6,17 +6,18 @@
 
 > **СТАТУС: ранняя разработка (v0.1.0).** Цель — **полнофункциональный парсер
 > каталога Avito**: парсинг и мониторинг публичных объявлений Avito. Движок
-> парсинга спроектирован и **валидирован живьём** (куки → rotate-until-clean →
-> curl_cffi → извлечение JSON каталога), но ещё не портирован в код сервера.
-> **Все 7 MCP-тулз — в статусе «🔜 план»**, см. [`docs/roadmap.md`](docs/roadmap.md)
-> и канон — [дизайн парсера Avito](docs/superpowers/specs/2026-07-18-avito-parser-design.md).
+> (куки → rotate-until-clean → curl_cffi → извлечение JSON каталога) и **все 7
+> MCP-тулз реализованы**. Сетевую часть не проверить без чистого RU-прокси:
+> с домашнего IP Avito отдаёт 403/429 после 2–3 запросов. План —
+> [`docs/roadmap.md`](docs/roadmap.md), канон —
+> [дизайн парсера Avito](docs/superpowers/specs/2026-07-18-avito-parser-design.md).
 
 ## Идея
 
 Плагин построен по принципу **«толстое ядро + тонкие адаптеры»**:
 
 - **MCP-сервер** несёт детерминированную логику движка парсинга (куки, прокси,
-  rotate-until-clean, HTTP на `curl_cffi`, извлечение JSON, фильтры, sqlite,
+  rotate-until-clean, HTTP на `curl_cffi`, извлечение JSON, фильтры, Postgres (Supabase),
   экспорт, уведомления) — код тулз не попадает в контекст агента.
 - **Skills** несут процедурное знание: как обходить антибот (rotate-until-clean,
   чистые RU-прокси) и как выбирать нужную MCP-тулзу под задачу.
@@ -41,10 +42,11 @@
 Пакет [`avito-mcp-server`](server/README.md) на FastMCP v3 — несёт движок
 парсинга: провайдер кук (spfa) → rotate-until-clean → curl_cffi
 (`impersonate`) + follow SSR-редиректа → извлечение `loaderData.data.catalog.items`.
-Движок валидирован живьём; порт в код и **7 MCP-тулз** (`search_listings`,
+Движок валидирован живьём и портирован в код; **7 MCP-тулз** (`search_listings`,
 `get_listing`, `scan_new_listings`, `check_proxy_health`, `send_notification`,
-`export_listings`, `get_price_history`) — все в статусе «🔜 план». Раздача
-`skills/` по MCP (`SkillsProvider`) уже работает.
+`export_listings`, `get_price_history`) работают. Состояние (dedup, история цены,
+cooldown прокси) — в Postgres проекта Supabase (`AVITO_SUPABASE_DSN`). Раздача
+`skills/` по MCP (`SkillsProvider`) работает.
 
 ## Установка
 
@@ -57,7 +59,7 @@ git clone https://github.com/evgenygurin/avito-mcp-plugin.git
 claude --plugin-dir ./avito-mcp-plugin     # загрузить на сессию
 # внутри Claude Code:
 /reload-plugins
-claude plugin validate ./avito-mcp-plugin  # проверка манифеста
+claude plugin validate ./avito-mcp-plugin --strict  # проверка манифестов (не скилов)
 ```
 
 MCP-сервер стартует автоматически (см. [`.mcp.json`](.mcp.json)); требуется

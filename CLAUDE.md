@@ -16,9 +16,10 @@
 (`impersonate`) + follow SSR-редиректа на канонический URL → извлечение
 `loaderData.data.catalog.items`. Раздача `skills/` по MCP (`SkillsProvider`) работает.
 
-**7 MCP-тулз — ВСЕ в статусе «🔜 план» (код ещё не написан):** `search_listings`,
-`get_listing`, `scan_new_listings`, `check_proxy_health`, `send_notification`,
-`export_listings`, `get_price_history`.
+**7 MCP-тулз реализованы** (`search_listings`, `get_listing`, `scan_new_listings`,
+`check_proxy_health`, `send_notification`, `export_listings`, `get_price_history`)
+плюс `ping`/`official_api_call`. Сетевую часть **живьём не проверить без чистого
+RU-прокси**: с домашнего IP Avito отдаёт 403/429 после 2–3 запросов.
 Статус скилов — в [`docs/skills.md`](docs/skills.md); план — в [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Переменные окружения
@@ -32,11 +33,14 @@
 | `SPFA_API_KEY` | ключ spfa (провайдер кук по умолчанию) |
 | `AVITO_COOKIE_PROVIDER` | `spfa`\|`own`\|`playwright` (дефолт `spfa`) |
 | `AVITO_OWN_COOKIES` | куки для провайдера `own` |
-| `AVITO_PROXY` | прокси `user:pass@host:port` |
+| `AVITO_PROXY` | прокси `user:pass@host:port`; **список через запятую → `ProxyPool`** |
 | `AVITO_PROXY_CHANGE_URL` | URL ротации IP (→ MobileProxy) |
+| `AVITO_PROXY_LIST_URL` | кабинет со списком прокси (JSON-массив или строки); недоступен → фоллбэк на `AVITO_PROXY` |
+| `AVITO_COOKIES_CACHE` | файл кэша кук spfa (дефолт `~/.cache/avito-mcp-server/cookies.json`, TTL 12 ч) |
+| `AVITO_PAGE_PAUSE` | пауза между страницами каталога, сек (дефолт 1.0) |
 | `AVITO_TG_TOKEN`, `AVITO_TG_CHAT_IDS` | Telegram-уведомления |
 | `AVITO_VK_TOKEN`, `AVITO_VK_USER_IDS` | VK-уведомления |
-| `AVITO_DB_PATH` | путь sqlite (dedup + история цены) |
+| `AVITO_SUPABASE_DSN` | DSN Postgres проекта Supabase — **единственное** хранилище |
 | `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций IP (дефолт 18) |
 | `AVITO_SKILLS_DIR` | явный override каталога skills |
 | `CLAUDE_PLUGIN_ROOT` | резолв `skills/` при установке плагина (`${CLAUDE_PLUGIN_ROOT}/skills`) |
@@ -66,7 +70,10 @@ uv run mypy src
 
 # Из корня репозитория:
 python3 scripts/check_versions.py   # синхронность версий в 5 манифестах (голый python3, не uv)
-claude plugin validate ./           # валидация манифестов плагина
+claude plugin validate ./ --strict  # ТОЛЬКО манифесты: marketplace.json + plugin.json.
+# SKILL.md он здесь НЕ проверяет: marketplace root == plugin root, поэтому команда
+# всегда уходит в marketplace-режим. Чтобы проверить скилы — копия репо без
+# .claude-plugin/marketplace.json и `claude plugin validate <копия> --strict`
 ```
 
 Релиз/публикация (`uv build` / `uv publish` / тег) — [`docs/releasing.md`](docs/releasing.md).
@@ -88,7 +95,7 @@ avito_mcp_server/
 ├── export/        # xlsx / json / csv
 ├── notifications/ # Telegram, VK
 ├── filters/       # keyword/seller/price/geo/max_age
-├── storage/       # sqlite: dedup + история цены
+├── storage/       # models.py (ORM) + supabase.py: dedup, история цены, cooldown прокси
 ├── models.py      # Listing / SearchResult (факты + опции)
 ├── parser.py      # ядро: find_json_on_page + пагинация каталога
 ├── skills_provider.py  # раздача skills по MCP (остаётся)
@@ -101,13 +108,47 @@ avito_mcp_server/
 - Тулзы: `async def`, `Context` для логов/прогресса, docstring = «что делает + когда
   вызывать». Возврат — Pydantic-модель (structured output, напр. `SearchResult`).
   Ошибки наружу — через `ToolError`.
-- < 20 тулз на сервер (иначе падает точность выбора моделью). Целевой набор — 7
-  тулз, все в статусе «🔜 план».
+- < 20 тулз на сервер (иначе падает точность выбора моделью). Сейчас 9.
 
 **Тесты** (`server/tests/`, `asyncio_mode="auto"` → async-тесты без декоратора):
 in-memory `Client(mcp)`; сетевая граница мокается через `httpx.MockTransport`
 (мок транспорта, не методов клиента); фабрики подменяются `monkeypatch`. Новый код —
 по TDD (`superpowers:test-driven-development`).
+
+- Тулзы мокают `fetch_catalog` **в своём модуле** (`search_mod.fetch_catalog`), поэтому
+  общий обход страниц `parser.walk_pages` принимает `fetch` аргументом — иначе моки не
+  сработают. Там же зануляй `page_pause`, иначе тесты реально спят.
+- `res.data` у `Client(mcp)` — не Pydantic-модель; для проверки всего ответа целиком
+  бери `res.structured_content`.
+- Тулзы тестируются на `FakeStorage` из [`tests/fakes.py`](server/tests/fakes.py)
+  (импорт `from fakes import FakeStorage` — пакета `tests` нет). Само хранилище —
+  против **живого** Postgres, тесты пропускаются без `AVITO_SUPABASE_DSN`: подменять
+  Postgres другой СУБД нельзя, диалектный upsert и `timestamptz` ведут себя иначе.
+
+## Хранилище: только Postgres (Supabase)
+
+**sqlite не используется нигде** — ни в коде, ни в тестах. Один бэкенд, один путь;
+`AVITO_SUPABASE_DSN` обязателен для мониторинга и истории цен.
+
+- ORM — **SQLAlchemy 2.0**: `DeclarativeBase`, аннотации `Mapped`/`mapped_column`,
+  схема через `__table_args__ = {"schema": "avito"}` ([`storage/models.py`](server/src/avito_mcp_server/storage/models.py)).
+- Upsert — диалектный `postgresql.insert(...).on_conflict_do_update()`; универсального
+  бэкенд-агностик upsert в SQLAlchemy нет.
+- DSN из кабинета (`postgresql://…`) нормализуется в `postgresql+psycopg://…`:
+  иначе SQLAlchemy подставит psycopg2, которого в зависимостях нет.
+- `sqlalchemy` + `psycopg[binary]` — **основные** зависимости, не extra.
+
+- Проект Supabase: `avito-mcp-plugin`, ref `wvszgigxihuaaardchft`, eu-central-1.
+  Миграции — в [`supabase/migrations/`](supabase/migrations/).
+- Схема **`avito`**, не `public`, и она **закрыта от Data API** → ходим прямым
+  подключением по DSN (`psycopg`), а не через REST/PostgREST.
+- **RLS включён, политик нет — это замысел, а не недоделка:** доступ остаётся только
+  у `service_role`, `anon`/`authenticated` отозваны. `get_advisors` показывает
+  INFO `rls_enabled_no_policy` — ожидаемо, «чинить» не нужно.
+- Наружу время отдаётся **epoch-float**, хотя в Postgres лежит `timestamptz` —
+  иначе поедут модели тулз (`PricePoint` ждёт число).
+- В `proxy_cooldown` пишется адрес **без учётных данных**; `mask_proxy()` режет
+  `user:pass@` и в выводе `check_proxy_health`.
 
 ## Раздача skills по MCP
 
@@ -174,6 +215,19 @@ SemVer синхронно в **пяти** манифестах: `.claude-plugin/
   скопированный `.venv` роняет MCP-сервер («no Python executable»). Перед локальной
   установкой удали `server/.venv`, либо ставь из git/PyPI (git исключает эти файлы).
   Проверено: после очистки `.venv` в кэше плагин поднимает сервер и тулзы штатно.
+- **Кэш плагина живёт своей жизнью.** Правки в рабочем дереве не видны установленному
+  плагину, пока не сделаешь `rsync` в `~/.claude/plugins/cache/.../server/src/` —
+  а новые тулзы появятся только после перезапуска MCP-процесса (в non-interactive
+  сессии он сам не респавнится). Для проверки кода без этого — in-memory `Client(mcp)`
+  из рабочего дерева.
+- **Долгие сетевые прогоны запускай фоном с логом в файл + `Monitor` на хвост.**
+  `HttpClient.get` крутит до 18 попыток; без логов это выглядит как зависание.
+- **Классификатор auto-режима блокирует внешние изменения** (пауза проекта Supabase,
+  запуск парсинга). Не обходить — просить пользователя сделать это самому.
+- **Supabase free-план: 2 активных проекта.** Статусы `RESTORING`/`PAUSING` считаются
+  активными; приостановленные — нет. Тулзы удаления проекта в MCP нет вовсе.
+- **Куки spfa стоят денег** (~12 ₽) и живут ~12 ч, а каждый вызов тулзы — новый
+  процесс: без файлового кэша они покупались бы заново на каждом запросе.
 
 ## Git
 

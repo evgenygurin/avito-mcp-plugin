@@ -3,15 +3,15 @@
 Сервер `avito` — Python-пакет [`avito-mcp-server`](../server/README.md) на
 [FastMCP v3](https://gofastmcp.com). Несёт весь **движок парсинга**
 (полнофункциональный парсер каталога Avito): провайдеры кук и прокси,
-HTTP-клиент на `curl_cffi`, извлечение JSON со страницы, фильтры, sqlite-хранилище,
+HTTP-клиент на `curl_cffi`, извлечение JSON со страницы, фильтры, хранилище в Postgres (Supabase),
 экспорт и уведомления.
 
-> **СТАТУС:** целевой дизайн — полнофункциональный парсер каталога Avito, полный
-> контекст в
-> [спеке дизайна](superpowers/specs/2026-07-18-avito-parser-design.md). Все 7 тулз
-> и модули движка (`cookies/` `proxies/` `http/` `parser.py` `filters/` `storage/`
-> `export/` `notifications/`) — **🔜 план, код ещё не написан**. Работает раздача
-> `skills/` по MCP (`skills_provider.py`) и каркас in-memory тестов. Ниже —
+> **СТАТУС:** полный контекст дизайна — в
+> [спеке](superpowers/specs/2026-07-18-avito-parser-design.md). Все 7 тулз и модули
+> движка (`cookies/` `proxies/` `http/` `parser.py` `filters/` `storage/`
+> `export/` `notifications/`) **реализованы**; работает раздача `skills/` по MCP
+> (`skills_provider.py`). Сетевую часть **живьём не проверить без чистого
+> RU-прокси**: с домашнего IP Avito отдаёт 403/429 после 2–3 запросов. Ниже —
 > архитектура и конвенции.
 
 ## Стек
@@ -35,7 +35,7 @@ class Listing(BaseModel):
     price: float | None
     url: str | None
     address: str | None
-    views: int | None = None          # только если with_views / parse_views
+    views: int | None = None          # только get_listing при with_views
 
 @mcp.tool
 async def get_listing(id_or_url: str, ctx: Context, with_views: bool = False) -> Listing:
@@ -60,23 +60,23 @@ async def get_listing(id_or_url: str, ctx: Context, with_views: bool = False) ->
 
 ## Тулзы
 
-7 тулз — целевой полный фичесет парсинга Avito, все со статусом **🔜 план**.
+7 тулз — полный фичесет парсинга Avito, все реализованы.
 
 | # | Тулза | Назначение | Статус |
 | --- | --- | --- | --- |
-| 1 | `search_listings` | Разовый поиск каталога по запросу/URL, региону, фильтрам | 🔜 план |
-| 2 | `get_listing` | Детали одного объявления (`id_or_url`, `with_views`) | 🔜 план |
-| 3 | `scan_new_listings` | Dedup + отслеживание смены цены (мониторинг-примитив, sqlite) | 🔜 план |
-| 4 | `check_proxy_health` | Диагностика прокси и ротации-до-чистого | 🔜 план |
-| 5 | `send_notification` | Уведомление в Telegram/VK | 🔜 план |
-| 6 | `export_listings` | Экспорт объявлений в xlsx/json/csv | 🔜 план |
-| 7 | `get_price_history` | История цены объявления из sqlite | 🔜 план |
+| 1 | `search_listings` | Поиск каталога по URL с фильтрами; `pages` — обход страниц | ✅ готово |
+| 2 | `get_listing` | Детали одного объявления (`id_or_url`, `with_views`) | ✅ готово |
+| 3 | `scan_new_listings` | Dedup + отслеживание смены цены (мониторинг-примитив, Postgres) | ✅ готово |
+| 4 | `check_proxy_health` | Диагностика: проверяет каждый адрес пула (`probes`) | ✅ готово |
+| 5 | `send_notification` | Уведомление в Telegram/VK | ✅ готово |
+| 6 | `export_listings` | Экспорт объявлений в xlsx/json/csv | ✅ готово |
+| 7 | `get_price_history` | История цены объявления из Postgres | ✅ готово |
 
 Регистрация — через модули `server/src/avito_mcp_server/tools/*` с функцией
 `register(mcp)`; `server.py` вызывает их для каждой группы тулз (по группе на модуль).
 
 Фильтры (`include_keywords`, `exclude_keywords`, `seller_blacklist`,
-`price_min/max`, `geo`, `max_age`) и `parse_views` — это **параметры** тулз, а не
+`price_min/max`, `geo`, `max_age`) и `pages` — это **параметры** тулз, а не
 отдельные тулзы: так набор держится глубоко под лимитом Anthropic «< 20 тулз».
 Тулза `parse_phone` **не портируется** — сбор телефонов продавцов (ПДн
 третьих лиц) исключён из фичесета. Возврат — Pydantic-модели (structured output),
@@ -131,7 +131,7 @@ async def get_listing(id_or_url: str, ctx: Context, with_views: bool = False) ->
 | `AVITO_PROXY_CHANGE_URL` | URL ротации IP (→ `MobileProxy`) |
 | `AVITO_TG_TOKEN`, `AVITO_TG_CHAT_IDS` | Telegram-уведомления |
 | `AVITO_VK_TOKEN`, `AVITO_VK_USER_IDS` | VK-уведомления |
-| `AVITO_DB_PATH` | путь sqlite (dedup + история цены) |
+| `AVITO_SUPABASE_DSN` | DSN Postgres проекта Supabase (dedup + история цены + cooldown) |
 | `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций (дефолт 18) |
 | `AVITO_SKILLS_DIR`, `CLAUDE_PLUGIN_ROOT` | резолв каталога `skills/` |
 

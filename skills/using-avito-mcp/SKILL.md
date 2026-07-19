@@ -25,33 +25,35 @@ curl_cffi + follow SSR-редиректа → извлечение `loaderData.d
 
 ## Tools
 
-Все семь тулз — целевой фичесет полнофункционального парсера каталога Avito.
-Статус — «план»: код движка ещё не написан.
+Все семь тулз реализованы. Сетевую часть не проверить без чистого RU-прокси:
+с домашнего IP Avito отдаёт 403/429 после 2–3 запросов.
 
 | Тулза | Назначение | Статус |
 |---|---|---|
-| `search_listings(url_or_query, region, pages, include_keywords, exclude_keywords, seller_blacklist, price_min/max, geo, max_age, parse_views)` | Разовый поиск каталога с фильтрами | 🔜 план |
-| `get_listing(id_or_url, with_views)` | Детали объявления | 🔜 план |
-| `scan_new_listings(...)` | Dedup + отслеживание цены (мониторинг-примитив, sqlite); возвращает только новое/подешевевшее | 🔜 план |
-| `check_proxy_health()` | Диагностика прокси-пула и ротации | 🔜 план |
-| `send_notification(channel, message, targets?)` | Уведомление в Telegram/VK | 🔜 план |
-| `export_listings(items, format, path?)` | Выгрузка в xlsx/json/csv | 🔜 план |
-| `get_price_history(listing_id)` | История цены из sqlite | 🔜 план |
+| `search_listings(url, pages, include_keywords, exclude_keywords, seller_blacklist, price_min/max, geo, max_age)` | Поиск каталога с фильтрами; `pages` обходит страницы по `pager.next` | ✅ готово |
+| `get_listing(id_or_url, with_views)` | Детали объявления | ✅ готово |
+| `scan_new_listings(..., pages)` | Dedup + отслеживание цены (Postgres); возвращает только новое/подешевевшее | ✅ готово |
+| `check_proxy_health()` | Диагностика: проверяет каждый адрес пула, возвращает `probes` | ✅ готово |
+| `send_notification(channel, message, targets?)` | Уведомление в Telegram/VK | ✅ готово |
+| `export_listings(items, fmt, path?)` | Выгрузка в xlsx/json/csv | ✅ готово |
+| `get_price_history(listing_id)` | История цены из Postgres | ✅ готово |
 
-Актуальный список и параметры — `docs/mcp-server.md`.
+Актуальный список и параметры — `docs/mcp-server.md` в репозитории плагина;
+в рантайме сверяйся со схемой тулзы, которую отдаёт сам MCP-сервер.
 
 ## Implementation
 
 - **Поиск и детали** (чужие публичные объявления) → `search_listings` / `get_listing`.
   Фильтры (`include_keywords`, `seller_blacklist`, `price_min/max`, `geo`, `max_age`)
-  и `parse_views` — параметры тулзы, не отдельные вызовы.
+  — параметры тулзы, не отдельные вызовы. Просмотры доступны только
+  у `get_listing` через `with_views`.
 - **Мониторинг** (новые/подешевевшие лоты) → `scan_new_listings` в связке с внешним
   планировщиком (агент/cron/`/schedule`); история цены — `get_price_history`. Оба
-  опираются на sqlite (`AVITO_DB_PATH`).
+  опираются на Postgres проекта Supabase (`AVITO_SUPABASE_DSN`).
 - **Сайд-эффекты** → `export_listings` (xlsx/json/csv), `send_notification`
   (Telegram/VK).
-- Пока движок не написан — не подменяй тулзы ручным `curl_cffi`/Playwright; объясни,
-  что тулза ещё не реализована. Процедура и механика — [scraping-avito](../scraping-avito/SKILL.md).
+- Не подменяй тулзы ручным `curl_cffi`/Playwright: движок реализован, ручной скрипт
+  обойдёт кэш кук, cooldown прокси и дедуп. Механика — [scraping-avito](../scraping-avito/SKILL.md).
 - **Блокировки** (`429`, `firewallCaptcha`, «проблема с IP») → не решай капчу,
   делегируй ретрай с rotate-until-clean слою движка; см. [scraping-avito](../scraping-avito/SKILL.md).
 

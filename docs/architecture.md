@@ -79,7 +79,7 @@ avito_mcp_server/
 ├── export/             # xlsx / json / csv
 ├── notifications/      # Telegram, VK
 ├── filters/            # keyword / seller / price / geo / max_age
-├── storage/            # sqlite: dedup + история цены
+├── storage/            # Postgres (Supabase), SQLAlchemy ORM: dedup + история цены + cooldown
 ├── models.py           # Listing / SearchResult (факты + опции)
 ├── parser.py           # ядро: find_json_on_page + пагинация
 ├── skills_provider.py  # раздача skills по MCP
@@ -94,20 +94,20 @@ URL категории → `find_json_on_page` (`script[type=mime/invalid][data-
 вместо одной ротации — устраняет типичный дефект наивной retry-логики (одна
 ротация → сдача).
 
-### 7 MCP-тулз (статус — 🔜 план)
+### 7 MCP-тулз (реализованы)
 
-Фильтры и `parse_views` — параметры тулз, не отдельные тулзы; держит нас под
+Фильтры — параметры тулз, не отдельные тулзы; держит нас под
 лимитом Anthropic «< 20 тулз». Код ещё **не написан**.
 
 | # | Тулза | Назначение |
 |---|---|---|
-| 1 | `search_listings` | разовый поиск каталога (фильтры + `parse_views` — параметры) |
+| 1 | `search_listings` | поиск каталога (фильтры и `pages` — параметры) |
 | 2 | `get_listing` | детали объявления по `id_or_url` |
-| 3 | `scan_new_listings` | dedup + отслеживание цены (мониторинг-примитив, sqlite) |
+| 3 | `scan_new_listings` | dedup + отслеживание цены (мониторинг-примитив, Postgres) |
 | 4 | `check_proxy_health` | диагностика прокси/ротации |
 | 5 | `send_notification` | Telegram / VK |
 | 6 | `export_listings` | xlsx / json / csv |
-| 7 | `get_price_history` | история цены из sqlite |
+| 7 | `get_price_history` | история цены из Postgres |
 
 Возврат — Pydantic-модели (structured output). Ошибки наружу — через `ToolError`.
 План реализации по фазам — в [`roadmap.md`](roadmap.md).

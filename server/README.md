@@ -65,7 +65,7 @@ server/
 │   ├── export/                        # xlsx / json / csv
 │   ├── notifications/                 # Telegram, VK
 │   ├── filters/                       # keyword/seller/price/geo/max_age
-│   ├── storage/                       # sqlite: dedup + история цены
+│   ├── storage/                       # Postgres (Supabase) через SQLAlchemy ORM
 │   ├── skills_provider.py             # раздача skills/ по MCP (SkillsProvider)
 │   └── tools/                         # тонкий MCP-слой (register(mcp) на группу)
 └── tests/                             # pytest: in-memory Client(mcp) + мок сетевой границы

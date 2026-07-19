@@ -41,48 +41,112 @@ allowlist `validate_endpoint`), модели `OwnItem`/`OwnItemsResult`/`Account
 Движок парсинга в `server/src/avito_mcp_server/` (модульная раскладка —
 см. §3 спеки).
 
-- [ ] `models.py` — `Listing`/`SearchResult`, упрощённые до фактов + опций
-- [ ] `parser.py` — ядро: `find_json_on_page`
+- [x] `models.py` — `Listing`/`SearchResult`, упрощённые до фактов + опций
+- [x] `parser.py` — ядро: `find_json_on_page`
       (`script[type=mime/invalid][data-mfe-state=true]` →
       `loaderData.data.catalog.items`) + пагинация `web/1/js/items`
-- [ ] `http/` — curl_cffi клиент (`impersonate` ∈ {chrome, edge, safari},
+- [x] `http/` — curl_cffi клиент (`impersonate` ∈ {chrome, edge, safari},
       случайный UA) с **rotate-until-clean** (наше улучшение retry-логики: до
       `AVITO_MAX_ROTATE_ATTEMPTS`, дефолт 18, вместо одной ротации —
       типичный дефект наивной retry-логики: одна ротация → сдача) + follow
       SSR-редиректа на канонический URL категории
-- [ ] `proxies/` — `MobileProxy` (с change-url) / `ServerProxy` (статик) /
+- [x] `proxies/` — `MobileProxy` (с change-url) / `ServerProxy` (статик) /
       `NoProxy`
-- [ ] `cookies/` — провайдер `spfa` (`POST spfa.ru/api/cookies` + `/unblock`,
+- [x] `cookies/` — провайдер `spfa` (`POST spfa.ru/api/cookies` + `/unblock`,
       `SPFA_API_KEY`), единый интерфейс `CookiesProvider.get()/update()/handle_block()`
-- [ ] `filters/` — keyword/seller/price/geo/max_age
+- [x] `filters/` — keyword/seller/price/geo/max_age
 
 ## Фаза 2 — тулзы парсинга
 
-- [ ] `search_listings` — разовый поиск каталога
-- [ ] `get_listing` — детали объявления
-- [ ] `check_proxy_health` — диагностика прокси/ротации
+- [x] `search_listings` — разовый поиск каталога
+- [x] `get_listing` — детали объявления
+- [x] `check_proxy_health` — диагностика прокси/ротации
 
 ## Фаза 3 — состояние/мониторинг
 
-- [ ] `storage/` — sqlite (`AVITO_DB_PATH`, ленивое создание): `seen_items`
-      (dedup) + `price_history`
-- [ ] `scan_new_listings` — dedup + отслеживание цены (мониторинг-примитив;
+- [x] `storage/` — Postgres проекта Supabase (`AVITO_SUPABASE_DSN`), SQLAlchemy ORM:
+      `seen_items` (dedup) + `price_history` + `proxy_cooldown`
+- [x] `scan_new_listings` — dedup + отслеживание цены (мониторинг-примитив;
       мониторинг снаружи — через внешний планировщик/`/schedule`, не фоновый
       цикл в сервере)
-- [ ] `get_price_history` — история цены из sqlite
+- [x] `get_price_history` — история цены из Postgres
 
 ## Фаза 4 — сайд-эффекты
 
-- [ ] `export_listings` — xlsx/json/csv
-- [ ] `send_notification` — Telegram/VK (`AVITO_TG_TOKEN`/`AVITO_TG_CHAT_IDS`,
+- [x] `export_listings` — xlsx/json/csv
+- [x] `send_notification` — Telegram/VK (`AVITO_TG_TOKEN`/`AVITO_TG_CHAT_IDS`,
       `AVITO_VK_TOKEN`/`AVITO_VK_USER_IDS`)
 
 ## Фаза 5 — доп. провайдеры кук
 
-- [ ] Провайдер `own` (`AVITO_OWN_COOKIES`) — куки пользователя
-- [ ] Провайдер `playwright` (браузерная добыча куки `ft`) — опционально,
-      тяжёлая extra-зависимость; решить, публиковать как основной extra или
-      отдельный пакет
+- [x] Провайдер `own` (`AVITO_OWN_COOKIES`) — куки пользователя
+- [x] Провайдер `playwright` (браузерная добыча куки `ft`) — опционально,
+      тяжёлая extra-зависимость (``pip install avito-mcp-server[playwright]``)
+
+## Фаза 6 — глубина выдачи и диагностика
+
+- [x] Пагинация каталога: `pages` в `search_listings` и `scan_new_listings`,
+      обход по `catalog.pager.next` с дедупом по id (внутренний API
+      `web/1/js/items` не понадобился — ссылки на страницы есть в самом каталоге)
+- [x] `AVITO_PAGE_PAUSE` (дефолт 1.0 с) — пауза между страницами, иначе обход
+      выжигает IP быстрее, чем собирает данные
+- [x] Адрес из `geo.formattedAddress` + `geo.geoReferences` (улица, метро, район)
+      вместо города — без этого `geo`-фильтр не мог сработать в принципе
+- [x] Статус `firewall` в `classify` + `explain_status`: тулзы называют причину
+      блокировки и следующий шаг (`AVITO_PROXY`), а не отдают сырой код
+- [x] Логирование попыток HTTP и обхода страниц (`logging`) — долгие прогоны
+      наблюдаемы вживую
+
+## Фаза 7 — автоматизация прокси и кук
+
+- [x] `ProxyPool` — `AVITO_PROXY` принимает список через запятую; при блокировке
+      перебираются адреса, круг замкнулся → `rotate()` возвращает `False`
+- [x] Файловый кэш кук spfa (`AVITO_COOKIES_CACHE`, дефолт
+      `~/.cache/avito-mcp-server/cookies.json`, TTL 12 ч): каждый вызов тулзы —
+      новый процесс, без кэша куки покупались заново (~12 ₽ за штуку).
+      Проверено живьём: два экземпляра, одна покупка
+- [x] Кэш инвалидируется при неудачном `unblock` — мёртвые куки не переживают
+      блокировку
+
+- [x] Экспоненциальный backoff между ротациями (потолок 60 с) вместо фиксированных
+      9 с; после последней попытки не спим — всё равно сдаёмся
+- [x] Память о выжженных IP в Postgres (`proxy_cooldown`, TTL 30 мин): пул стартует
+      с адреса вне cooldown и помечает текущий при блокировке. Включается сама,
+      если задан `AVITO_SUPABASE_DSN`; без БД пул работает без памяти
+- [x] `check_proxy_health` проверяет **каждый** адрес пула и возвращает `probes`
+      (какой живой, какой нет). Учётные данные маскируются — наружу только host:port
+- [x] `AVITO_PROXY_LIST_URL` — список портов подхватывается из кабинета
+      (JSON-массив или текст по строке); кабинет недоступен → фоллбэк на `AVITO_PROXY`
+
+Не автоматизируется намеренно: покупка прокси/пополнение баланса (финансовые
+операции) и ввод учётных данных в кабинеты провайдеров — это делает человек,
+плагин получает готовые значения через env.
+
+## Фаза 8 — Postgres (Supabase) как единственное хранилище
+
+- [x] Проект Supabase `avito-mcp-plugin` (ref `wvszgigxihuaaardchft`, eu-central-1),
+      миграция `supabase/migrations/20260719_avito_storage.sql`
+- [x] Схема `avito` (не `public`), таблицы `seen_items` / `price_history` /
+      `proxy_cooldown`; `timestamptz` вместо epoch-float, `numeric` вместо `real`
+      для цен, `generated always as identity` вместо автоинкремента
+- [x] RLS включён на всех таблицах, политик нет намеренно: доступ только у
+      `service_role`; `anon`/`authenticated` отозваны со схемы. `get_advisors`
+      показывает лишь INFO `rls_enabled_no_policy` — это и есть замысел
+- [x] `storage/supabase.py` — SQLAlchemy ORM; наружу epoch-float, иначе поедут
+      модели тулз
+- [x] sqlite удалён целиком (код, тесты, документация): один бэкенд — один путь.
+      Хранилище настраивается единственной переменной `AVITO_SUPABASE_DSN`
+- [x] ORM-модели `storage/models.py` (SQLAlchemy 2.0: `DeclarativeBase`,
+      `Mapped`/`mapped_column`, схема через `__table_args__`), upsert — диалектный
+      `postgresql.insert(...).on_conflict_do_update()`
+- [x] `sqlalchemy` и `psycopg[binary]` — основные зависимости: хранилище
+      обязательное, прятать его в extra больше незачем
+- [x] Тесты хранилища идут против **настоящего** Postgres (skip без DSN); подменять
+      его другой СУБД нельзя — диалектный upsert и `timestamptz` там ведут себя
+      иначе. Тулзы тестируются на `FakeStorage` (`tests/fakes.py`)
+
+Схема `avito` закрыта от Data API, поэтому доступ идёт прямым подключением по
+DSN, а не через REST/PostgREST.
 
 Каждая фаза — отдельный цикл spec→plan→implement при необходимости; спека
 парсера — зонтичная.
