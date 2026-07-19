@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, Numeric, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -28,8 +29,9 @@ class SeenItem(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     url: Mapped[str | None] = mapped_column(String)
     title: Mapped[str | None] = mapped_column(String)
-    # numeric, а не float: цена — деньги, округление float здесь недопустимо.
-    price: Mapped[float | None] = mapped_column(Numeric)
+    # Numeric отдаёт Decimal, а не float — деньги, округление float здесь
+    # недопустимо. Аннотация должна отражать фактический рантайм-тип ORM.
+    price: Mapped[Decimal | None] = mapped_column(Numeric)
     first_seen: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -51,7 +53,7 @@ class PriceHistory(Base):
     item_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey(f"{SCHEMA}.seen_items.id", ondelete="CASCADE")
     )
-    price: Mapped[float] = mapped_column(Numeric)
+    price: Mapped[Decimal] = mapped_column(Numeric)
     seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

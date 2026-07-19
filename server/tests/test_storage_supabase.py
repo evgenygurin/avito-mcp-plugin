@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import os
 import time
+from decimal import Decimal
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from avito_mcp_server.storage.models import PriceHistory, ProxyCooldown, SeenItem
 from avito_mcp_server.storage.supabase import SeenRow, SupabaseStorage, normalize_dsn
@@ -205,6 +206,27 @@ class TestAgainstPostgres:
         self, store: SupabaseStorage
     ) -> None:
         store.upsert_seen_many([])  # не должно падать на пустом VALUES
+
+    def test_price_columns_are_decimal_at_runtime(self, store: SupabaseStorage) -> None:
+        # Context7-аудит (SQLAlchemy 2.0.51): колонки объявлены Numeric, но
+        # аннотации Mapped[float] — mypy валидирует код, который на самом деле
+        # получает Decimal и упадёт TypeError на "Decimal + float". Маскируется
+        # только тем, что оба места чтения в SupabaseStorage оборачивают в
+        # float() на границе. Тест фиксирует фактический рантайм-тип ORM.
+        store.upsert_seen_many(
+            [SeenRow(id=999000016, url="/x_16", title="дом", price=123.0)]
+        )
+        with store._session() as session:
+            seen_item = session.get(SeenItem, 999000016)
+            assert isinstance(seen_item.price, Decimal)
+            (history_row,) = (
+                session.execute(
+                    select(PriceHistory).where(PriceHistory.item_id == 999000016)
+                )
+                .scalars()
+                .all()
+            )
+            assert isinstance(history_row.price, Decimal)
 
 
 class TestEngineSetup:
