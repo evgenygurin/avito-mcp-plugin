@@ -177,6 +177,39 @@ def test_fetch_catalog_refreshes_redirect_token_after_stale_hop_failure() -> Non
     assert client.calls[1][1] < 18
 
 
+def test_fetch_catalog_survives_multiple_token_refresh_cycles() -> None:
+    # Живой прогон 2026-07-19: с дефолтным max_redirects=3 общий счётчик
+    # итераций делился между "настоящими редиректами" и "обновлениями
+    # токена" — после ВТОРОГО обновления бюджет итераций кончался, и
+    # fetch_catalog возвращал redirect_loop, хотя логически всё ещё была
+    # возможность попробовать освежить токен ещё раз. Глубина реального
+    # редиректа и число обновлений токена — независимые бюджеты.
+    stub = (FIX / "redirect_stub.html").read_text(encoding="utf-8")
+    catalog = (FIX / "catalog.html").read_text(encoding="utf-8")
+
+    class _Client:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int | None]] = []
+
+        def get(self, url: str, max_attempts: int | None = None) -> _Resp:
+            self.calls.append((url, max_attempts))
+            # Редирект-хоп проваливается ДВАЖДЫ подряд (вызовы 2 и 4),
+            # пробивается только на третьей попытке (вызов 6).
+            if len(self.calls) in (2, 4):
+                raise RuntimeError("редирект-цель не пробилась за N попыток")
+            if len(self.calls) == 6:
+                return _Resp(200, catalog)
+            return _Resp(200, stub)
+
+    client = _Client()
+    kind, payload = fetch_catalog(
+        client, "https://www.avito.ru/nizhniy_novgorod/kvartiry/prodam"
+    )
+    assert kind == "ok"
+    assert isinstance(payload, dict) and payload.get("items")
+    assert len(client.calls) == 6
+
+
 def test_backoff_grows_and_caps(monkeypatch) -> None:
     # Фиксированные 9 с на каждую блокировку либо слишком долго на первой попытке,
     # либо слишком агрессивно на десятой. Пауза должна расти и упираться в потолок.

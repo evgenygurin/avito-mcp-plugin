@@ -134,7 +134,10 @@ _REDIRECT_HOP_ATTEMPTS = 5
 
 
 def fetch_catalog(
-    client: HttpClient, url: str, max_redirects: int = 3
+    client: HttpClient,
+    url: str,
+    max_redirects: int = 3,
+    max_token_refreshes: int = 3,
 ) -> tuple[str, Any]:
     """Забрать страницу и следовать SSR-редиректу на канонический URL.
 
@@ -143,13 +146,23 @@ def fetch_catalog(
     ротируется на каждой попытке), а протухший/спалённый токен — тогда мы
     заново запрашиваем исходный URL за свежим редиректом.
 
+    ``max_redirects`` и ``max_token_refreshes`` — независимые бюджеты:
+    первый ограничивает глубину настоящей редирект-цепочки (Avito обычно
+    делает один хоп), второй — сколько раз можно попробовать освежить
+    протухший токен. Раньше они делили один общий счётчик итераций, из-за
+    чего второе освежение токена могло съесть весь бюджет и вернуть
+    ``redirect_loop`` вместо ещё одной законной попытки.
+
     Возвращает результат ``classify``: ``("ok", catalog)`` при успехе, либо
-    ``("softblock"|"nojson", None)``; ``("redirect_loop", None)`` при зацикливании.
+    ``("softblock"|"nojson", None)``; ``("redirect_loop", None)`` при
+    исчерпании одного из бюджетов.
     """
     origin_url = url
     current_url = url
     on_redirect_hop = False
-    for _ in range(max_redirects + 1):
+    redirects_followed = 0
+    refreshes_used = 0
+    while True:
         try:
             resp = client.get(
                 current_url,
@@ -158,6 +171,9 @@ def fetch_catalog(
         except RuntimeError:
             if not on_redirect_hop:
                 raise
+            refreshes_used += 1
+            if refreshes_used > max_token_refreshes:
+                return "redirect_loop", None
             log.warning(
                 "редирект-цель не пробилась за %s попыток — обновляю токен с "
                 "исходного URL",
@@ -168,8 +184,10 @@ def fetch_catalog(
             continue
         kind, payload = classify(resp.text)
         if kind == "redirect":
+            redirects_followed += 1
+            if redirects_followed > max_redirects:
+                return "redirect_loop", None
             current_url = to_absolute_avito_url(payload)
             on_redirect_hop = True
             continue
         return kind, payload
-    return "redirect_loop", None
