@@ -1,8 +1,9 @@
-"""Тесты модуля уведомлений (мок httpx)."""
+"""Тесты модуля уведомлений (мок httpx.Client)."""
 
 import httpx
 import pytest
 
+from avito_mcp_server.notifications import sender
 from avito_mcp_server.notifications.sender import send_notification
 
 
@@ -17,12 +18,33 @@ class _FakeResponse:
         return self._payload
 
 
-def _fake_post(url: str, **kwargs):
-    return _FakeResponse()
+class _FakeClient:
+    """Мок ``httpx.Client``: считает создания, чтобы ловить лишние хендшейки."""
+
+    instances: int = 0
+    post_fn = staticmethod(lambda url, **kwargs: _FakeResponse())
+
+    def __init__(self, **kwargs) -> None:
+        _FakeClient.instances += 1
+
+    def __enter__(self) -> "_FakeClient":
+        return self
+
+    def __exit__(self, *a) -> bool:  # noqa: ANN002
+        return False
+
+    def post(self, url: str, **kwargs):
+        return _FakeClient.post_fn(url, **kwargs)
 
 
-def test_telegram_sends(monkeypatch) -> None:
-    monkeypatch.setattr("avito_mcp_server.notifications.sender.httpx.post", _fake_post)
+@pytest.fixture(autouse=True)
+def _reset_fake_client(monkeypatch):
+    _FakeClient.instances = 0
+    _FakeClient.post_fn = staticmethod(lambda url, **kwargs: _FakeResponse())
+    monkeypatch.setattr(sender.httpx, "Client", _FakeClient)
+
+
+def test_telegram_sends() -> None:
     detail, sent, targets = send_notification(
         channel="telegram",
         message="test",
@@ -34,8 +56,7 @@ def test_telegram_sends(monkeypatch) -> None:
     assert detail == "ok"
 
 
-def test_vk_sends(monkeypatch) -> None:
-    monkeypatch.setattr("avito_mcp_server.notifications.sender.httpx.post", _fake_post)
+def test_vk_sends() -> None:
     detail, sent, targets = send_notification(
         channel="vk",
         message="test",
@@ -71,22 +92,21 @@ def test_vk_requires_user_ids() -> None:
         send_notification(channel="vk", message="test", vk_token="tok")
 
 
-def test_vk_error_body_is_not_success(monkeypatch) -> None:
+def test_vk_error_body_is_not_success() -> None:
     # VK отвечает 200 и кладёт ошибку в тело: raise_for_status() её не заметит,
     # и тулза отрапортует об отправке, которой не было.
-    def _error_post(url: str, **kwargs):
-        return _FakeResponse(
+    _FakeClient.post_fn = staticmethod(
+        lambda url, **kwargs: _FakeResponse(
             {"error": {"error_code": 5, "error_msg": "User authorization failed"}}
         )
-
-    monkeypatch.setattr("avito_mcp_server.notifications.sender.httpx.post", _error_post)
+    )
     with pytest.raises(RuntimeError, match="User authorization failed"):
         send_notification(
             channel="vk", message="привет", vk_token="t", vk_user_ids=["1"]
         )
 
 
-def test_partial_delivery_is_reported_not_swallowed(monkeypatch) -> None:
+def test_partial_delivery_is_reported_not_swallowed() -> None:
     # Падение на втором из трёх адресатов не отменяет доставку первому:
     # раньше тулза сообщала полный провал, и оператор слал повторно.
     calls: list[str] = []
@@ -98,7 +118,7 @@ def test_partial_delivery_is_reported_not_swallowed(monkeypatch) -> None:
             raise httpx.ConnectError("сеть отвалилась")
         return _FakeResponse({"ok": True})
 
-    monkeypatch.setattr("avito_mcp_server.notifications.sender.httpx.post", _flaky_post)
+    _FakeClient.post_fn = staticmethod(_flaky_post)
     detail, sent, targets = send_notification(
         channel="telegram", message="привет", tg_token="t", tg_chat_ids=["a", "b", "c"]
     )
@@ -108,3 +128,16 @@ def test_partial_delivery_is_reported_not_swallowed(monkeypatch) -> None:
     assert targets == ["a", "c"], "в targets только реально доставленные"
     assert sent is True, "частичная доставка — не полный провал"
     assert "b" in detail
+
+
+def test_uses_single_client_for_whole_batch() -> None:
+    # Context7-аудит (httpx 0.28.1): раньше каждый адресат = отдельный
+    # httpx.post() = отдельное TCP+TLS-рукопожатие к одному и тому же хосту.
+    # Один httpx.Client на рассылку переиспользует соединение.
+    send_notification(
+        channel="telegram",
+        message="test",
+        tg_token="tok",
+        tg_chat_ids=["1", "2", "3"],
+    )
+    assert _FakeClient.instances == 1
