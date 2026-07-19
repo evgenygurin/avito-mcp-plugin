@@ -93,6 +93,16 @@ class TestCsv:
             Path(path).unlink(missing_ok=True)
 
 
+def test_header_and_rows_stay_aligned(listings: list[Listing]) -> None:
+    # Заголовок и значения строятся из одного описания колонок: разъехавшись,
+    # они молча сдвинули бы все столбцы в выгрузке (цена под адресом и т.п.).
+    from avito_mcp_server.export.exporter import _header, _listings_to_rows
+
+    rows = _listings_to_rows(listings)
+    assert rows, "фикстура должна давать хотя бы одну строку"
+    assert all(len(row) == len(_header()) for row in rows)
+
+
 def test_unknown_format_raises(listings: list[Listing]) -> None:
     with pytest.raises(ValueError, match="неподдерживаемый формат"):
         export_listings(listings, "pdf")
@@ -132,7 +142,9 @@ def test_xlsx_writes_numbers_as_numbers() -> None:
     # Цена и id строками ломают сортировку и формулы в самом Excel.
     from openpyxl import load_workbook
 
-    ws = load_workbook(BytesIO(to_xlsx_bytes([Listing(id=7, title="x", price=50000.0)]))).active
+    ws = load_workbook(
+        BytesIO(to_xlsx_bytes([Listing(id=7, title="x", price=50000.0)]))
+    ).active
     assert ws["A2"].value == 7
     assert ws["C2"].value == 50000
 

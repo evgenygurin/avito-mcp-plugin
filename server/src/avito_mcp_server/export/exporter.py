@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import csv
 import json
 import re
+from collections.abc import Callable
 from io import BytesIO, StringIO
 from pathlib import Path
+from typing import NamedTuple
 
 from ..models import Listing
 
@@ -35,33 +38,35 @@ def _safe_text(value: str | None) -> str:
     return cleaned
 
 
+class _Column(NamedTuple):
+    """Колонка выгрузки: заголовок и как достать значение из объявления."""
+
+    title: str
+    value: Callable[[Listing], object]
+
+
+# Единственное описание таблицы: заголовок и значения расходиться не могут.
+# Раньше это были два параллельных списка — добавив колонку в один, можно было
+# молча сдвинуть все столбцы выгрузки.
+_COLUMNS: tuple[_Column, ...] = (
+    _Column("id", lambda item: item.id),
+    _Column("title", lambda item: _safe_text(item.title)),
+    _Column("price", lambda item: item.price),
+    _Column("address", lambda item: _safe_text(item.address)),
+    _Column("url", lambda item: _safe_text(item.url)),
+    _Column("published_at", lambda item: item.published_at),
+    _Column("views", lambda item: item.views),
+    _Column("description", lambda item: _safe_text(item.description)),
+)
+
+
+def _header() -> list[str]:
+    return [column.title for column in _COLUMNS]
+
+
 def _listings_to_rows(listings: list[Listing]) -> list[list[object]]:
     """Строки для таблицы: числа остаются числами, текст обезврежен."""
-    return [
-        [
-            item.id,
-            _safe_text(item.title),
-            item.price,
-            _safe_text(item.address),
-            _safe_text(item.url),
-            item.published_at,
-            item.views,
-            _safe_text(item.description),
-        ]
-        for item in listings
-    ]
-
-
-_HEADER = [
-    "id",
-    "title",
-    "price",
-    "address",
-    "url",
-    "published_at",
-    "views",
-    "description",
-]
+    return [[column.value(item) for column in _COLUMNS] for item in listings]
 
 
 def to_xlsx_bytes(listings: list[Listing]) -> bytes:
@@ -70,7 +75,7 @@ def to_xlsx_bytes(listings: list[Listing]) -> bytes:
     wb = Workbook()
     ws = wb.active
     assert ws is not None
-    ws.append(_HEADER)
+    ws.append(_header())
     for row in _listings_to_rows(listings):
         ws.append(row)
     buf = BytesIO()
@@ -89,7 +94,7 @@ def to_json_str(listings: list[Listing]) -> str:
 def to_csv_str(listings: list[Listing]) -> str:
     buf = StringIO()
     writer = csv.writer(buf)
-    writer.writerow(_HEADER)
+    writer.writerow(_header())
     writer.writerows(_listings_to_rows(listings))
     return buf.getvalue()
 
@@ -110,8 +115,6 @@ def export_listings(
         if path:
             Path(path).write_bytes(data)
             return ("", path)
-        import base64
-
         encoded = base64.b64encode(data).decode()
         # Base64 бинарника возвращается прямо в ответ MCP-тулзы и попадает в
         # контекст модели: крупная выгрузка вытеснила бы полезные данные.
