@@ -14,6 +14,7 @@ import time
 from typing import Any, cast
 
 from curl_cffi import requests as cffi
+from curl_cffi.curl import CurlError
 
 from ..cookies.base import CookiesProvider
 from ..parser import classify
@@ -62,16 +63,34 @@ class HttpClient:
         self.block_codes = block_codes
         self.backoff_cap = backoff_cap
 
-    def get(self, url: str) -> Any:
-        """GET с ротацией IP до чистого. Возвращает 200-ответ или бросает RuntimeError."""
+    def get(self, url: str, max_attempts: int | None = None) -> Any:
+        """GET с ротацией IP до чистого. Возвращает 200-ответ или бросает RuntimeError.
+
+        ``max_attempts`` переопределяет лимит попыток для этого вызова — нужно
+        для редирект-хопа на одноразовый токен (см. ``fetch_catalog``), где
+        долбить один и тот же URL до общего потолка бессмысленно.
+        """
+        limit = max_attempts if max_attempts is not None else self.max_attempts
         cookies = self.cookies.get() if self.cookies else None
         blocks = 0
-        for attempt in range(1, self.max_attempts + 1):
-            log.info("GET %s (попытка %s/%s)", url, attempt, self.max_attempts)
-            with _build_session(self.proxy.httpx_proxy()) as session:
-                resp = session.get(
-                    url, cookies=cookies, timeout=self.timeout, allow_redirects=True
-                )
+        for attempt in range(1, limit + 1):
+            log.info("GET %s (попытка %s/%s)", url, attempt, limit)
+            try:
+                with _build_session(self.proxy.httpx_proxy()) as session:
+                    resp = session.get(
+                        url, cookies=cookies, timeout=self.timeout, allow_redirects=True
+                    )
+            except CurlError as exc:
+                # Транспортная ошибка (таймаут, обрыв соединения) — не код
+                # блокировки, но так же лечится ротацией IP: свежий IP из пула
+                # часто просто быстрее/доступнее прежнего.
+                log.warning("транспортная ошибка (%s) — ротирую IP", exc)
+                self.proxy.rotate()
+                if attempt < limit:
+                    delay = min(self.wait_after_rotate * (2**blocks), self.backoff_cap)
+                    _sleep(delay)
+                blocks += 1
+                continue
             log.info("ответ %s на попытке %s", resp.status_code, attempt)
             if self.cookies:
                 self.cookies.update(resp)
@@ -81,7 +100,7 @@ class HttpClient:
                 # Экспоненциальный backoff с потолком: первая блокировка часто
                 # случайна, а на десятой частые повторы только злят антибот.
                 # После последней попытки не спим — всё равно сдаёмся.
-                if attempt < self.max_attempts:
+                if attempt < limit:
                     delay = min(self.wait_after_rotate * (2**blocks), self.backoff_cap)
                     _sleep(delay)
                 blocks += 1
@@ -95,10 +114,17 @@ class HttpClient:
         # с одного IP, поэтому подсказка про AVITO_PROXY здесь ключевая.
         via = "прокси не задан" if self.proxy.httpx_proxy() is None else "через прокси"
         raise RuntimeError(
-            f"не удалось получить {url} за {self.max_attempts} попыток "
+            f"не удалось получить {url} за {limit} попыток "
             f"(блокировки IP, {via}). Нужен чистый RU-прокси: "
             "задайте AVITO_PROXY и AVITO_PROXY_CHANGE_URL"
         )
+
+
+# Редирект-URL несёт одноразовый анти-бот токен (``context=``): если он не
+# пробивается — дело не в IP, токен уже "использован". Долбить его до общего
+# потолка попыток бессмысленно, поэтому здесь лимит ниже, а после исчерпания
+# fetch_catalog возвращается на исходный URL за свежим токеном.
+_REDIRECT_HOP_ATTEMPTS = 5
 
 
 def fetch_catalog(
@@ -106,18 +132,42 @@ def fetch_catalog(
 ) -> tuple[str, Any]:
     """Забрать страницу и следовать SSR-редиректу на канонический URL.
 
+    Редирект-цель — одноразовый токен: если конкретный редирект-URL не
+    пробивается за ``_REDIRECT_HOP_ATTEMPTS`` попыток, это не проблема IP (тот
+    ротируется на каждой попытке), а протухший/спалённый токен — тогда мы
+    заново запрашиваем исходный URL за свежим редиректом.
+
     Возвращает результат ``classify``: ``("ok", catalog)`` при успехе, либо
     ``("softblock"|"nojson", None)``; ``("redirect_loop", None)`` при зацикливании.
     """
+    origin_url = url
+    current_url = url
+    on_redirect_hop = False
     for _ in range(max_redirects + 1):
-        resp = client.get(url)
+        try:
+            resp = client.get(
+                current_url,
+                max_attempts=_REDIRECT_HOP_ATTEMPTS if on_redirect_hop else None,
+            )
+        except RuntimeError:
+            if not on_redirect_hop:
+                raise
+            log.warning(
+                "редирект-цель не пробилась за %s попыток — обновляю токен с "
+                "исходного URL",
+                _REDIRECT_HOP_ATTEMPTS,
+            )
+            current_url = origin_url
+            on_redirect_hop = False
+            continue
         kind, payload = classify(resp.text)
         if kind == "redirect":
-            url = (
+            current_url = (
                 payload
                 if payload.startswith("http")
                 else f"https://www.avito.ru{payload}"
             )
+            on_redirect_hop = True
             continue
         return kind, payload
     return "redirect_loop", None

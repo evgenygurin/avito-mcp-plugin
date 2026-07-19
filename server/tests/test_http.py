@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from curl_cffi.requests.exceptions import Timeout as CffiTimeout
 
 import avito_mcp_server.http.client as hc
 from avito_mcp_server.http.client import HttpClient, fetch_catalog
@@ -26,7 +27,10 @@ class _FakeSession:
         return False
 
     def get(self, url, cookies=None, timeout=None, allow_redirects=True):  # noqa: ANN001
-        return _FakeSession.seq.pop(0)
+        item = _FakeSession.seq.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
 
 
 class _FakeProxy:
@@ -49,6 +53,32 @@ def test_rotate_until_clean(monkeypatch) -> None:
     resp = client.get("https://www.avito.ru/x")
     assert resp.status_code == 200
     assert proxy.rotations == 2  # ротация на каждый из двух 403
+
+
+def test_get_retries_on_transport_error(monkeypatch) -> None:
+    # Живой прогон 2026-07-19: curl_cffi.requests.exceptions.Timeout после
+    # ротации на новый IP валил весь процесс — ретрай ловил только коды
+    # блокировки (401/403/429), а не транспортные ошибки соединения.
+    _FakeSession.seq = [CffiTimeout("timed out"), _Resp(200, "<html>ok</html>")]
+    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    proxy = _FakeProxy()
+    client = HttpClient(proxy=proxy, cookies=None, max_attempts=3, wait_after_rotate=0)
+    resp = client.get("https://www.avito.ru/x")
+    assert resp.status_code == 200
+    assert proxy.rotations == 1
+
+
+def test_get_raises_after_max_attempts_on_persistent_transport_error(
+    monkeypatch,
+) -> None:
+    _FakeSession.seq = [CffiTimeout("timed out") for _ in range(5)]
+    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    client = HttpClient(
+        proxy=_FakeProxy(), cookies=None, max_attempts=3, wait_after_rotate=0
+    )
+    with pytest.raises(RuntimeError) as exc:
+        client.get("https://www.avito.ru/x")
+    assert "AVITO_PROXY" in str(exc.value)
 
 
 def test_get_raises_after_max_attempts(monkeypatch) -> None:
@@ -74,7 +104,7 @@ def test_fetch_catalog_follows_redirect() -> None:
         def __init__(self) -> None:
             self.urls: list[str] = []
 
-        def get(self, url: str) -> _Resp:
+        def get(self, url: str, max_attempts: int | None = None) -> _Resp:
             self.urls.append(url)
             return pages.pop(0)
 
@@ -85,6 +115,52 @@ def test_fetch_catalog_follows_redirect() -> None:
     assert kind == "ok"
     assert isinstance(payload, dict) and payload.get("items")
     assert len(client.urls) == 2  # исходный + канонический после редиректа
+
+
+def test_get_honors_max_attempts_override(monkeypatch) -> None:
+    # Один и тот же 403 навсегда: без override клиент ушёл бы за пределы
+    # заготовленной очереди ответов (IndexError) вместо ожидаемого RuntimeError.
+    _FakeSession.seq = [_Resp(403)]
+    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    client = HttpClient(
+        proxy=_FakeProxy(), cookies=None, max_attempts=18, wait_after_rotate=0
+    )
+    with pytest.raises(RuntimeError):
+        client.get("https://www.avito.ru/x", max_attempts=1)
+
+
+def test_fetch_catalog_refreshes_redirect_token_after_stale_hop_failure() -> None:
+    # Наблюдение из живого прогона: исходный URL пробивается за разумное число
+    # ротаций, а КОНКРЕТНЫЙ редирект-URL (одноразовый токен в context=) иногда
+    # не пробивается вообще — долбить его дальше бессмысленно, нужен свежий
+    # токен с исходного URL.
+    stub = (FIX / "redirect_stub.html").read_text(encoding="utf-8")
+    catalog = (FIX / "catalog.html").read_text(encoding="utf-8")
+
+    class _Client:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int | None]] = []
+
+        def get(self, url: str, max_attempts: int | None = None) -> _Resp:
+            self.calls.append((url, max_attempts))
+            if len(self.calls) == 2:
+                raise RuntimeError("редирект-цель не пробилась за N попыток")
+            if len(self.calls) == 4:
+                return _Resp(200, catalog)
+            return _Resp(200, stub)
+
+    client = _Client()
+    kind, payload = fetch_catalog(
+        client, "https://www.avito.ru/nizhniy_novgorod/kvartiry/prodam"
+    )
+    assert kind == "ok"
+    assert isinstance(payload, dict) and payload.get("items")
+    assert len(client.calls) == 4
+    # исходный URL запрошен дважды (изначально + за свежим токеном после провала)
+    assert client.calls[0][0] == client.calls[2][0]
+    # редирект-хоп ограничен более низким потолком попыток, чем обычный запрос
+    assert client.calls[1][1] is not None
+    assert client.calls[1][1] < 18
 
 
 def test_backoff_grows_and_caps(monkeypatch) -> None:
