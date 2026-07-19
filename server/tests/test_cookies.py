@@ -139,6 +139,22 @@ def test_spfa_persists_cookies_between_processes(monkeypatch, tmp_path) -> None:
     assert len(calls) == 1
 
 
+def test_spfa_cache_is_not_world_readable(monkeypatch, tmp_path) -> None:
+    # В кэше лежат купленные Qrator-куки: это учётные данные (стоят денег и
+    # аутентифицируют запросы к Avito). С правами по умолчанию 0644 их прочёл бы
+    # любой пользователь машины.
+    cache = tmp_path / "sub" / "cookies.json"
+
+    def fake_post(url, **kwargs):  # noqa: ANN001
+        return _Resp(200, {"results": {"id": "1", "cookies": {"ft": "secret"}}})
+
+    monkeypatch.setattr(spfa_mod.httpx, "post", fake_post)
+    SpfaCookiesProvider(api_key="sk", cache_path=cache).get()
+
+    assert cache.exists()
+    assert cache.stat().st_mode & 0o077 == 0, "куки доступны на чтение чужим"
+
+
 def test_spfa_ignores_stale_cache(monkeypatch, tmp_path) -> None:
     import json as json_mod
     import time as time_mod

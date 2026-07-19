@@ -115,6 +115,10 @@ class SpfaCookiesProvider(CookiesProvider):
                     }
                 )
             )
+            # Куки — учётные данные: стоят денег и аутентифицируют запросы к
+            # Avito. Права по умолчанию (0644) отдали бы их любому пользователю
+            # машины. chmod после записи, а не umask — umask глобален для процесса.
+            self.cache_path.chmod(0o600)
         except OSError as exc:
             log.warning("не удалось сохранить кэш кук: %s", exc)
 
