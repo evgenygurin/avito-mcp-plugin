@@ -36,11 +36,6 @@ class SearchResult(BaseModel):
         return len(self.items)
 
 
-def mask_proxy(url: str) -> str:
-    """Убрать логин/пароль из строки прокси — наружу отдаём только host:port."""
-    return url.rsplit("@", 1)[-1] if url else url
-
-
 class ProxyProbe(BaseModel):
     """Итог проверки одного адреса из пула прокси (без учётных данных)."""
 

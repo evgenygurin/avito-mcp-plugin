@@ -17,7 +17,7 @@ from curl_cffi import requests as cffi
 from curl_cffi.curl import CurlError
 
 from ..cookies.base import CookiesProvider
-from ..parser import classify
+from ..parser import PageKind, PageResult, classify
 from ..proxies.proxy import Proxy
 from ..utils import to_absolute_avito_url
 
@@ -146,7 +146,7 @@ def fetch_catalog(
     url: str,
     max_redirects: int = 3,
     max_token_refreshes: int = 3,
-) -> tuple[str, Any]:
+) -> PageResult:
     """Забрать страницу и следовать SSR-редиректу на канонический URL.
 
     Редирект-цель — одноразовый токен: если конкретный редирект-URL не
@@ -181,7 +181,7 @@ def fetch_catalog(
                 raise
             refreshes_used += 1
             if refreshes_used > max_token_refreshes:
-                return "redirect_loop", None
+                return PageKind.REDIRECT_LOOP, None
             log.warning(
                 "редирект-цель не пробилась за %s попыток — обновляю токен с "
                 "исходного URL",
@@ -197,10 +197,10 @@ def fetch_catalog(
             redirects_followed = 0
             continue
         kind, payload = classify(resp.text)
-        if kind == "redirect":
+        if kind == PageKind.REDIRECT:
             redirects_followed += 1
             if redirects_followed > max_redirects:
-                return "redirect_loop", None
+                return PageKind.REDIRECT_LOOP, None
             current_url = to_absolute_avito_url(payload)
             on_redirect_hop = True
             continue

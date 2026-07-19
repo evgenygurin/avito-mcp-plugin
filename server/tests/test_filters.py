@@ -63,3 +63,33 @@ def test_max_age_with_injected_now() -> None:
     items = [_l(1, published_at=recent), _l(2, published_at=old)]
     out = apply_filters(items, FilterSpec(max_age=3600), now=now)
     assert [i.id for i in out] == [1]
+
+
+def test_every_spec_field_actually_filters() -> None:
+    """Каждое поле FilterSpec обязано влиять на выдачу.
+
+    Критерий, забытый в ``_CRITERIA``, — это молча неработающий параметр тулзы:
+    агент задаёт фильтр, получает полный список и не узнаёт, что его проигнорировали.
+    """
+    item = _l(
+        1, title="гараж", price=500, seller="bad", address="Москва", published_at=0
+    )
+    rejecting = {
+        "include_keywords": FilterSpec(include_keywords=["квартира"]),
+        "exclude_keywords": FilterSpec(exclude_keywords=["гараж"]),
+        "seller_blacklist": FilterSpec(seller_blacklist=["bad"]),
+        "price_min": FilterSpec(price_min=1000),
+        "price_max": FilterSpec(price_max=100),
+        "geo": FilterSpec(geo="Казань"),
+        "max_age": FilterSpec(max_age=60),
+    }
+    assert set(rejecting) == set(FilterSpec.model_fields), "поле спеки без критерия"
+    for field, spec in rejecting.items():
+        assert apply_filters([item], spec, now=1_000_000.0) == [], field
+
+
+def test_listing_without_price_fails_range_filter() -> None:
+    # Объявление без цены не может доказать попадание в диапазон — иначе
+    # «до 1 млн» вернуло бы объявления «цена по запросу».
+    items = [_l(1, price=None), _l(2, price=500)]
+    assert [i.id for i in apply_filters(items, FilterSpec(price_max=1000))] == [2]

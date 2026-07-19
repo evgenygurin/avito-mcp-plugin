@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
 
 import httpx
+
+from ..storage.base import ProxyCooldownStore
 
 log = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ class ProxyPool(Proxy):
     def __init__(
         self,
         urls: list[str],
-        cooldown_store: Any = None,
+        cooldown_store: ProxyCooldownStore | None = None,
         cooldown: float = 1800.0,
     ) -> None:
         if not urls:

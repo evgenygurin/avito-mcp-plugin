@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .cookies.factory import build_cookies_provider
 from .http.client import HttpClient
 from .proxies.factory import build_proxy, fetch_proxy_list
+from .storage.base import ProxyCooldownStore
 from .storage.supabase import SupabaseStorage
 
 log = logging.getLogger(__name__)
@@ -89,7 +90,7 @@ def page_pause() -> float:
         return 1.0
 
 
-def _optional_storage() -> SupabaseStorage | None:
+def _optional_storage() -> ProxyCooldownStore | None:
     """Хранилище для памяти о выжженных IP — только если БД уже настроена.
 
     Без ``AVITO_SUPABASE_DSN`` пул обязан работать, просто без памяти между

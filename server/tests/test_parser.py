@@ -178,3 +178,31 @@ def test_published_at_normalized_to_seconds() -> None:
         {"items": [{"id": 2, "title": "x", "sortTimeStamp": 1700000000}]}
     )
     assert sec[0].published_at == 1700000000
+
+
+def test_page_kind_compares_with_plain_strings() -> None:
+    # StrEnum: типизация статусов не ломает существующие сравнения со строками
+    # (в тулзах и тестах статус приходит наружу как обычная строка).
+    from avito_mcp_server.parser import PageKind
+
+    kind, _ = classify("<html><body>no state here</body></html>")
+    assert kind == PageKind.NOJSON
+    assert kind == "nojson"
+    assert f"{kind}" == "nojson"
+
+
+def test_explain_status_covers_every_kind() -> None:
+    # Каждый статус обязан иметь человекочитаемый диагноз: без него оператор
+    # видит только код и не понимает, менять IP или куки.
+    from avito_mcp_server.parser import PageKind, explain_status
+
+    for kind in PageKind:
+        if kind is PageKind.OK:
+            continue
+        assert explain_status(kind) != f"страница не отдала каталог (статус: {kind})"
+
+
+def test_explain_status_survives_unknown_kind() -> None:
+    from avito_mcp_server.parser import explain_status
+
+    assert "статус: странное" in explain_status("странное")

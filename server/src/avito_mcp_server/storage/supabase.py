@@ -12,24 +12,24 @@ import logging
 from collections.abc import Iterable, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from typing import Any, NamedTuple
+from typing import Any
 
 from sqlalchemy import Engine, bindparam, create_engine, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import PriceHistory, ProxyCooldown, SeenItem
+from .rows import SeenRow
 
 log = logging.getLogger(__name__)
 
-
-class SeenRow(NamedTuple):
-    """Объявление для записи в ``seen_items`` — единица пакетного upsert."""
-
-    id: int
-    url: str | None
-    title: str | None
-    price: float | None
+__all__ = [
+    "SeenRow",
+    "SupabaseStorage",
+    "get_engine",
+    "normalize_dsn",
+    "reset_engine_cache",
+]
 
 
 def normalize_dsn(dsn: str) -> str:

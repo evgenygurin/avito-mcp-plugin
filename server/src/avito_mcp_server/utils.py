@@ -25,6 +25,34 @@ def extract_listing_id(value: str) -> int:
     raise ValueError(f"не удалось извлечь id объявления из: {value!r}")
 
 
+def mask_proxy(url: str) -> str:
+    """Убрать логин/пароль из строки прокси — наружу отдаём только host:port.
+
+    Живёт рядом с прочими детерминированными утилитами, а не среди Pydantic-моделей:
+    ответ тулзы и запись в ``proxy_cooldown`` не должны нести учётные данные.
+    """
+    return url.rsplit("@", 1)[-1] if url else url
+
+
+def is_absolute_url(value: str) -> bool:
+    """Строка уже является абсолютным http(s)-URL?"""
+    return value.startswith(("http://", "https://"))
+
+
+def to_listing_url(id_or_url: str) -> str:
+    """URL страницы объявления по URL или голому id.
+
+    Пользовательский ввод тулз (``get_listing``) допускает и то, и другое:
+    ссылку оставляем как есть, из id строим канонический мобильный путь.
+
+    Raises:
+        ValueError: если id извлечь не удалось.
+    """
+    if is_absolute_url(id_or_url):
+        return id_or_url
+    return f"https://www.avito.ru/items/{extract_listing_id(id_or_url)}"
+
+
 def to_absolute_avito_url(location: str) -> str:
     """Достроить относительный путь Avito (``/город/категория``) до полного URL.
 
@@ -32,8 +60,4 @@ def to_absolute_avito_url(location: str) -> str:
     Avito отдаёт и то, и другое в разных полях (``pager.next``, редирект
     ``loaderData.data.url``), и вызывающему коду не нужно об этом думать.
     """
-    return (
-        location
-        if location.startswith(("http://", "https://"))
-        else (f"https://www.avito.ru{location}")
-    )
+    return location if is_absolute_url(location) else f"https://www.avito.ru{location}"

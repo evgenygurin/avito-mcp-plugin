@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
-from typing import Literal
 
 from fastmcp import Context, FastMCP
-from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from ..models import NotificationResult
+from ..notifications.sender import NotificationChannel, get_notifier
 from ..notifications.sender import send_notification as do_send
-
-NotificationChannel = Literal["telegram", "vk"]
+from .execution import run_blocking
 
 
 def _resolve_targets(targets: list[str] | None, env_var: str) -> list[str]:
@@ -46,24 +43,17 @@ def register(mcp: FastMCP) -> None:
         await ctx.info(f"send_notification: {channel}")
 
         def _run() -> NotificationResult:
-            tg_token = os.getenv("AVITO_TG_TOKEN")
-            tg_chat_ids = _resolve_targets(targets, "AVITO_TG_CHAT_IDS")
-            vk_token = os.getenv("AVITO_VK_TOKEN")
-            vk_user_ids = _resolve_targets(targets, "AVITO_VK_USER_IDS")
-
+            # Какие env-переменные читать, знает сам канал — тулза не хранит
+            # копию соответствия «канал → токен/адресаты».
+            notifier = get_notifier(channel)
             detail, sent, actual_targets = do_send(
                 channel=channel,
                 message=message,
-                tg_token=tg_token,
-                tg_chat_ids=tg_chat_ids if channel == "telegram" else None,
-                vk_token=vk_token,
-                vk_user_ids=vk_user_ids if channel == "vk" else None,
+                token=os.getenv(notifier.token_env),
+                targets=_resolve_targets(targets, notifier.targets_env),
             )
             return NotificationResult(
                 channel=channel, sent=sent, targets=actual_targets, detail=detail
             )
 
-        try:
-            return await asyncio.to_thread(_run)
-        except Exception as exc:
-            raise ToolError(f"не удалось отправить уведомление: {exc}") from exc
+        return await run_blocking(_run, failure="не удалось отправить уведомление")

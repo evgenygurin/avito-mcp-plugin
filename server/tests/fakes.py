@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable, Sequence
 
-from avito_mcp_server.storage.supabase import SeenRow
+from avito_mcp_server.storage import SeenRow
 
 
 class FakeStorage:

@@ -344,3 +344,17 @@ def test_factory_passes_proxy_to_playwright(monkeypatch) -> None:
         "playwright", api_key=None, own_cookies=None, proxy="u:p@h:8000"
     )
     assert captured["proxy"] == "u:p@h:8000"
+
+
+def test_provider_registry_covers_documented_names() -> None:
+    # Имена из .env.example / CLAUDE.md должны существовать в реестре, иначе
+    # AVITO_COOKIE_PROVIDER молча даёт работу без кук.
+    from avito_mcp_server.cookies.factory import _PROVIDERS
+
+    assert set(_PROVIDERS) == {"spfa", "own", "playwright"}
+
+
+def test_unknown_provider_returns_none() -> None:
+    from avito_mcp_server.cookies.factory import build_cookies_provider
+
+    assert build_cookies_provider("нет-такого", api_key="k", own_cookies={}) is None

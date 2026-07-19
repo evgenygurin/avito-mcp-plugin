@@ -48,8 +48,8 @@ def test_telegram_sends() -> None:
     detail, sent, targets = send_notification(
         channel="telegram",
         message="test",
-        tg_token="tok",
-        tg_chat_ids=["123"],
+        token="tok",
+        targets=["123"],
     )
     assert sent is True
     assert targets == ["123"]
@@ -60,8 +60,8 @@ def test_vk_sends() -> None:
     detail, sent, targets = send_notification(
         channel="vk",
         message="test",
-        vk_token="tok",
-        vk_user_ids=["456"],
+        token="tok",
+        targets=["456"],
     )
     assert sent is True
     assert targets == ["456"]
@@ -79,7 +79,7 @@ def test_telegram_requires_token() -> None:
 
 def test_telegram_requires_chat_ids() -> None:
     with pytest.raises(ValueError, match="AVITO_TG_CHAT_IDS"):
-        send_notification(channel="telegram", message="test", tg_token="tok")
+        send_notification(channel="telegram", message="test", token="tok")
 
 
 def test_vk_requires_token() -> None:
@@ -89,7 +89,7 @@ def test_vk_requires_token() -> None:
 
 def test_vk_requires_user_ids() -> None:
     with pytest.raises(ValueError, match="AVITO_VK_USER_IDS"):
-        send_notification(channel="vk", message="test", vk_token="tok")
+        send_notification(channel="vk", message="test", token="tok")
 
 
 def test_vk_error_body_is_not_success() -> None:
@@ -101,9 +101,7 @@ def test_vk_error_body_is_not_success() -> None:
         )
     )
     with pytest.raises(RuntimeError, match="User authorization failed"):
-        send_notification(
-            channel="vk", message="привет", vk_token="t", vk_user_ids=["1"]
-        )
+        send_notification(channel="vk", message="привет", token="t", targets=["1"])
 
 
 def test_partial_delivery_is_reported_not_swallowed() -> None:
@@ -120,7 +118,7 @@ def test_partial_delivery_is_reported_not_swallowed() -> None:
 
     _FakeClient.post_fn = staticmethod(_flaky_post)
     detail, sent, targets = send_notification(
-        channel="telegram", message="привет", tg_token="t", tg_chat_ids=["a", "b", "c"]
+        channel="telegram", message="привет", token="t", targets=["a", "b", "c"]
     )
 
     # Обход не прерывается на первой ошибке — третий адресат тоже получает.
@@ -137,7 +135,27 @@ def test_uses_single_client_for_whole_batch() -> None:
     send_notification(
         channel="telegram",
         message="test",
-        tg_token="tok",
-        tg_chat_ids=["1", "2", "3"],
+        token="tok",
+        targets=["1", "2", "3"],
     )
     assert _FakeClient.instances == 1
+
+
+def test_notifier_knows_its_env_variables() -> None:
+    # Тулза читает env по этим именам — соответствие «канал → переменные»
+    # живёт только в стратегии канала и нигде не дублируется.
+    assert sender.get_notifier("telegram").token_env == "AVITO_TG_TOKEN"
+    assert sender.get_notifier("telegram").targets_env == "AVITO_TG_CHAT_IDS"
+    assert sender.get_notifier("vk").token_env == "AVITO_VK_TOKEN"
+    assert sender.get_notifier("vk").targets_env == "AVITO_VK_USER_IDS"
+
+
+def test_registry_matches_declared_channels() -> None:
+    from typing import get_args
+
+    assert set(get_args(sender.NotificationChannel)) == set(sender._NOTIFIERS)
+
+
+def test_get_notifier_rejects_unknown_channel() -> None:
+    with pytest.raises(ValueError, match="неподдерживаемый канал"):
+        sender.get_notifier("email")

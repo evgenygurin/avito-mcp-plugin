@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-
 from fastmcp import Context, FastMCP
-from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from ..config import build_http_client, page_pause
-from ..filters.filters import FilterSpec, PageCount, apply_filters
-from ..http.client import fetch_catalog
-from ..models import Listing, SearchResult
-from ..parser import walk_pages
+from ..filters.filters import FilterSpec, PageCount
+from ..models import SearchResult
+from .catalog import collect_listings
+from .execution import run_blocking
 
 
 def register(mcp: FastMCP) -> None:
@@ -74,15 +70,10 @@ def register(mcp: FastMCP) -> None:
         )
         await ctx.info(f"search_listings: {url}")
 
-        def _run() -> list[Listing]:
-            client = build_http_client()
-            found = walk_pages(fetch_catalog, client, url, pages, pause=page_pause())
-            return apply_filters(found, spec)
-
-        try:
-            items = await asyncio.to_thread(_run)
-        except Exception as exc:
-            raise ToolError(f"не удалось получить объявления: {exc}") from exc
+        items = await run_blocking(
+            lambda: collect_listings(url, spec, pages),
+            failure="не удалось получить объявления",
+        )
 
         await ctx.info(f"найдено {len(items)} объявлений")
         return SearchResult(items=items)

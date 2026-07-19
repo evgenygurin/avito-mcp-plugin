@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 import httpx
 
+from ..storage.base import ProxyCooldownStore
 from .proxy import MobileProxy, NoProxy, Proxy, ProxyPool, ServerProxy
 
 log = logging.getLogger(__name__)
 
 
-def build_proxy(proxy: str, change_url: str, cooldown_store: Any = None) -> Proxy:
+def build_proxy(
+    proxy: str, change_url: str, cooldown_store: ProxyCooldownStore | None = None
+) -> Proxy:
     """Собрать прокси по конфигу.
 
     ``AVITO_PROXY`` принимает как один адрес, так и список через запятую:

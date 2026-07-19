@@ -2,19 +2,51 @@
 
 from __future__ import annotations
 
-import asyncio
-
 from fastmcp import Context, FastMCP
-from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
-from ..config import build_http_client, build_storage, page_pause
-from ..filters.filters import FilterSpec, PageCount, apply_filters
-from ..http.client import fetch_catalog
-from ..models import PriceHistoryResult, PricePoint, ScanItem, ScanResult
-from ..parser import walk_pages
-from ..storage.supabase import SeenRow
+from ..config import build_storage
+from ..filters.filters import FilterSpec, PageCount
+from ..models import Listing, PriceHistoryResult, PricePoint, ScanItem, ScanResult
+from ..storage import SeenRow
 from ..utils import extract_listing_id
+from .catalog import collect_listings
+from .execution import run_blocking
+
+
+def _changes(listings: list[Listing], seen: dict[int, float | None]) -> list[ScanItem]:
+    """Отобрать новые и подешевевшие объявления относительно снимка хранилища.
+
+    Наличие id в ``seen`` = «видели раньше», значение = прошлая цена; без этого
+    различия объявления без цены считались бы новыми при каждом скане.
+    Чистая функция — сравнение проверяется без похода в базу.
+    """
+    items: list[ScanItem] = []
+    for listing in listings:
+        if listing.id not in seen:
+            items.append(ScanItem(listing=listing, is_new=True))
+            continue
+        prev_price = seen[listing.id]
+        if (
+            prev_price is not None
+            and listing.price is not None
+            and listing.price < prev_price
+        ):
+            items.append(
+                ScanItem(
+                    listing=listing,
+                    is_new=False,
+                    price_delta=prev_price - listing.price,
+                )
+            )
+    return items
+
+
+def _to_rows(listings: list[Listing]) -> list[SeenRow]:
+    return [
+        SeenRow(id=item.id, url=item.url, title=item.title, price=item.price)
+        for item in listings
+    ]
 
 
 def register(mcp: FastMCP) -> None:
@@ -72,54 +104,17 @@ def register(mcp: FastMCP) -> None:
         await ctx.info(f"scan_new_listings: {url}")
 
         def _run() -> ScanResult:
-            client = build_http_client()
             db = build_storage()
-            found = walk_pages(fetch_catalog, client, url, pages, pause=page_pause())
-            listings = apply_filters(found, spec)
-
-            # Одна выборка на страницу вместо запроса на объявление: база
-            # облачная, и раньше сотня round-trip'ов занимала больше времени,
-            # чем сам парсинг. Наличие id в `seen` = «видели раньше», значение =
-            # прошлая цена; без этого различия объявления без цены считались
-            # новыми при каждом скане.
+            listings = collect_listings(url, spec, pages)
+            # Одна выборка на всю страницу вместо запроса на объявление: база
+            # облачная, и сотня round-trip'ов занимала больше времени, чем сам
+            # парсинг.
             seen = db.fetch_seen([listing.id for listing in listings])
-
-            items: list[ScanItem] = []
-            for listing in listings:
-                if listing.id not in seen:
-                    items.append(ScanItem(listing=listing, is_new=True))
-                    continue
-                prev_price = seen[listing.id]
-                if (
-                    prev_price is not None
-                    and listing.price is not None
-                    and listing.price < prev_price
-                ):
-                    items.append(
-                        ScanItem(
-                            listing=listing,
-                            is_new=False,
-                            price_delta=prev_price - listing.price,
-                        )
-                    )
-
-            db.upsert_seen_many(
-                [
-                    SeenRow(
-                        id=listing.id,
-                        url=listing.url,
-                        title=listing.title,
-                        price=listing.price,
-                    )
-                    for listing in listings
-                ]
-            )
+            items = _changes(listings, seen)
+            db.upsert_seen_many(_to_rows(listings))
             return ScanResult(items=items)
 
-        try:
-            result = await asyncio.to_thread(_run)
-        except Exception as exc:
-            raise ToolError(f"не удалось выполнить сканирование: {exc}") from exc
+        result = await run_blocking(_run, failure="не удалось выполнить сканирование")
 
         await ctx.info(
             f"найдено {result.new_count} новых, {result.dropped_count} подешевевших"
@@ -143,14 +138,9 @@ def register(mcp: FastMCP) -> None:
         появляется только после того, как объявление попадало в
         ``scan_new_listings``. Требует ``AVITO_SUPABASE_DSN``.
         """
-        if listing_id.startswith(("http://", "https://")):
-            item_id = extract_listing_id(listing_id)
-        else:
-            try:
-                item_id = int(listing_id)
-            except ValueError:
-                item_id = extract_listing_id(listing_id)
-
+        # extract_listing_id понимает и URL, и голые цифры — отдельной ветки
+        # под каждый вид ввода не нужно.
+        item_id = extract_listing_id(listing_id)
         await ctx.info(f"get_price_history: {item_id}")
 
         def _run() -> PriceHistoryResult:
@@ -161,7 +151,4 @@ def register(mcp: FastMCP) -> None:
             ]
             return PriceHistoryResult(listing_id=item_id, history=history)
 
-        try:
-            return await asyncio.to_thread(_run)
-        except Exception as exc:
-            raise ToolError(f"не удалось получить историю цены: {exc}") from exc
+        return await run_blocking(_run, failure="не удалось получить историю цены")

@@ -4,6 +4,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
+import avito_mcp_server.tools.catalog as catalog_mod
 import avito_mcp_server.tools.search as search_mod
 
 CATALOG = {
@@ -33,10 +34,10 @@ def _mcp() -> FastMCP:
 
 
 async def test_search_listings_returns_filtered(monkeypatch) -> None:
-    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
-    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(catalog_mod, "build_http_client", lambda: object())
     monkeypatch.setattr(
-        search_mod, "fetch_catalog", lambda client, url: ("ok", CATALOG)
+        catalog_mod, "fetch_catalog", lambda client, url: ("ok", CATALOG)
     )
 
     async with Client(_mcp()) as client:
@@ -66,9 +67,9 @@ async def test_search_listings_walks_pages(monkeypatch) -> None:
         seen.append(url)
         return ("ok", page1 if len(seen) == 1 else page2)
 
-    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
-    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
-    monkeypatch.setattr(search_mod, "fetch_catalog", _fetch)
+    monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(catalog_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(catalog_mod, "fetch_catalog", _fetch)
 
     async with Client(_mcp()) as client:
         res = await client.call_tool(
@@ -92,9 +93,9 @@ async def test_search_listings_stops_on_last_page(monkeypatch) -> None:
         calls.append(url)
         return ("ok", {"items": [dict(CATALOG["items"][0])], "pager": {"current": 1}})
 
-    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
-    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
-    monkeypatch.setattr(search_mod, "fetch_catalog", _fetch)
+    monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(catalog_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(catalog_mod, "fetch_catalog", _fetch)
 
     async with Client(_mcp()) as client:
         res = await client.call_tool(
@@ -111,9 +112,9 @@ async def test_search_listings_dedupes_across_pages(monkeypatch) -> None:
         "items": [dict(CATALOG["items"][0])],
         "pager": {"next": "/nn/kvartiry?p=2", "current": 1},
     }
-    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
-    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
-    monkeypatch.setattr(search_mod, "fetch_catalog", lambda client, url: ("ok", page))
+    monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(catalog_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(catalog_mod, "fetch_catalog", lambda client, url: ("ok", page))
 
     async with Client(_mcp()) as client:
         res = await client.call_tool(
@@ -126,10 +127,10 @@ async def test_search_listings_dedupes_across_pages(monkeypatch) -> None:
 async def test_search_listings_explains_firewall(monkeypatch) -> None:
     # При выжженном IP агент должен получить действие («нужен чистый RU-прокси»),
     # а не сырой код статуса: ретраи без смены IP тут бесполезны.
-    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
-    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(catalog_mod, "build_http_client", lambda: object())
     monkeypatch.setattr(
-        search_mod, "fetch_catalog", lambda client, url: ("firewall", None)
+        catalog_mod, "fetch_catalog", lambda client, url: ("firewall", None)
     )
 
     async with Client(_mcp()) as client:
@@ -144,10 +145,10 @@ async def test_search_listings_explains_firewall(monkeypatch) -> None:
 
 
 async def test_search_listings_errors_on_non_ok(monkeypatch) -> None:
-    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
-    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(catalog_mod, "build_http_client", lambda: object())
     monkeypatch.setattr(
-        search_mod, "fetch_catalog", lambda client, url: ("softblock", None)
+        catalog_mod, "fetch_catalog", lambda client, url: ("softblock", None)
     )
 
     async with Client(_mcp()) as client:
@@ -172,10 +173,10 @@ async def test_pages_schema_has_sane_bounds() -> None:
 async def test_pages_out_of_bounds_rejected_at_argument_boundary(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
-    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(catalog_mod, "build_http_client", lambda: object())
     monkeypatch.setattr(
-        search_mod, "fetch_catalog", lambda client, url: ("ok", CATALOG)
+        catalog_mod, "fetch_catalog", lambda client, url: ("ok", CATALOG)
     )
 
     async with Client(_mcp()) as client:

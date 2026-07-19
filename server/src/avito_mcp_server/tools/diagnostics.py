@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 
 from fastmcp import Context, FastMCP
-from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from ..config import DEFAULT_COOKIE_PROVIDER, build_http_client
-from ..http.client import HttpClient
-from ..http.client import fetch_catalog
-from ..models import ProxyHealth, ProxyProbe, mask_proxy
-from ..parser import explain_status
+from ..http.client import HttpClient, fetch_catalog
+from ..models import ProxyHealth, ProxyProbe
+from ..parser import PageKind, explain_status
 from ..proxies.proxy import ProxyPool, ServerProxy
+from ..utils import mask_proxy
+from .execution import run_blocking
 
 log = logging.getLogger(__name__)
 
@@ -50,9 +49,8 @@ def register(mcp: FastMCP) -> None:
                 kind, _ = fetch_catalog(client, url)
             except Exception as exc:  # noqa: BLE001 — блокировка не ошибка тулзы
                 return False, f"ошибка: {exc}"
-            return (kind == "ok"), (
-                "каталог получен" if kind == "ok" else explain_status(kind)
-            )
+            ok = kind == PageKind.OK
+            return ok, ("каталог получен" if ok else explain_status(kind))
 
         def _run() -> ProxyHealth:
             client = build_http_client()
@@ -96,10 +94,6 @@ def register(mcp: FastMCP) -> None:
                 detail=detail,
             )
 
-        try:
-            return await asyncio.to_thread(_run)
-        except Exception as exc:
-            # build_http_client() может бросить ДО входа в _probe (напр.
-            # ValueError "пул прокси пуст") — единая ToolError-граница, как у
-            # остальных 6 тулз, вместо белой вороны в контракте ошибок.
-            raise ToolError(f"не удалось проверить прокси: {exc}") from exc
+        # build_http_client() может бросить ДО входа в _probe (напр. ValueError
+        # "пул прокси пуст") — та же ToolError-граница, что и у остальных тулз.
+        return await run_blocking(_run, failure="не удалось проверить прокси")

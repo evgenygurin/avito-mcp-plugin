@@ -2,7 +2,11 @@
 
 import pytest
 
-from avito_mcp_server.utils import extract_listing_id, to_absolute_avito_url
+from avito_mcp_server.utils import (
+    extract_listing_id,
+    to_absolute_avito_url,
+    to_listing_url,
+)
 
 
 class TestExtractListingId:
@@ -28,6 +32,21 @@ class TestExtractListingId:
     def test_raises_on_empty_string(self) -> None:
         with pytest.raises(ValueError):
             extract_listing_id("")
+
+
+class TestToListingUrl:
+    """Единый разбор пользовательского ввода get_listing (URL либо id)."""
+
+    def test_keeps_listing_url_as_is(self) -> None:
+        url = "https://www.avito.ru/moskva/telefony/iphone_1234567890"
+        assert to_listing_url(url) == url
+
+    def test_builds_canonical_url_from_bare_id(self) -> None:
+        assert to_listing_url("1234567890") == "https://www.avito.ru/items/1234567890"
+
+    def test_raises_on_garbage(self) -> None:
+        with pytest.raises(ValueError):
+            to_listing_url("не-id")
 
 
 class TestToAbsoluteAvitoUrl:

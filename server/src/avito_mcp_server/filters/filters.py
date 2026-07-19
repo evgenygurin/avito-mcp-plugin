@@ -1,8 +1,15 @@
-"""Фильтрация объявлений: keyword/seller/price/geo/max_age."""
+"""Фильтрация объявлений: keyword/seller/price/geo/max_age.
+
+Каждый критерий — самостоятельный предикат ``(listing, spec, now) -> bool``
+(Specification): объявление проходит, если его пропустили все предикаты.
+Новый критерий добавляется функцией и строкой в ``_CRITERIA``, а не ещё одним
+``continue`` внутри общего цикла.
+"""
 
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Annotated
 
 from pydantic import BaseModel, Field
@@ -63,6 +70,64 @@ class FilterSpec(BaseModel):
         )
 
 
+#: Критерий: пропустить объявление? ``now`` — момент отсчёта для возраста.
+Criterion = Callable[[Listing, FilterSpec, float], bool]
+
+
+def _matches_include(item: Listing, spec: FilterSpec, now: float) -> bool:
+    if not spec.include_keywords:
+        return True
+    title = item.title.lower()
+    return any(kw.lower() in title for kw in spec.include_keywords)
+
+
+def _matches_exclude(item: Listing, spec: FilterSpec, now: float) -> bool:
+    title = item.title.lower()
+    return not any(kw.lower() in title for kw in spec.exclude_keywords)
+
+
+def _seller_allowed(item: Listing, spec: FilterSpec, now: float) -> bool:
+    return not (item.seller_id and item.seller_id in spec.seller_blacklist)
+
+
+def _price_in_range(item: Listing, spec: FilterSpec, now: float) -> bool:
+    # Объявление без цены не может доказать, что попадает в диапазон.
+    if spec.price_min is not None and (
+        item.price is None or item.price < spec.price_min
+    ):
+        return False
+    if spec.price_max is not None and (
+        item.price is None or item.price > spec.price_max
+    ):
+        return False
+    return True
+
+
+def _geo_matches(item: Listing, spec: FilterSpec, now: float) -> bool:
+    if not spec.geo:
+        return True
+    return item.address is not None and spec.geo.lower() in item.address.lower()
+
+
+def _fresh_enough(item: Listing, spec: FilterSpec, now: float) -> bool:
+    if spec.max_age is None:
+        return True
+    if item.published_at is None:
+        return False
+    # published_at уже в секундах — нормализуется в parser.mapping._published_at.
+    return now - item.published_at <= spec.max_age
+
+
+_CRITERIA: tuple[Criterion, ...] = (
+    _matches_include,
+    _matches_exclude,
+    _seller_allowed,
+    _price_in_range,
+    _geo_matches,
+    _fresh_enough,
+)
+
+
 def apply_filters(
     items: list[Listing],
     spec: FilterSpec,
@@ -70,36 +135,8 @@ def apply_filters(
 ) -> list[Listing]:
     """Оставить объявления, удовлетворяющие всем заданным критериям."""
     current = time.time() if now is None else now
-    result: list[Listing] = []
-    for item in items:
-        title = item.title.lower()
-
-        if spec.include_keywords and not any(
-            kw.lower() in title for kw in spec.include_keywords
-        ):
-            continue
-        if any(kw.lower() in title for kw in spec.exclude_keywords):
-            continue
-        if item.seller_id and item.seller_id in spec.seller_blacklist:
-            continue
-        if spec.price_min is not None and (
-            item.price is None or item.price < spec.price_min
-        ):
-            continue
-        if spec.price_max is not None and (
-            item.price is None or item.price > spec.price_max
-        ):
-            continue
-        if spec.geo and (
-            item.address is None or spec.geo.lower() not in item.address.lower()
-        ):
-            continue
-        if spec.max_age is not None:
-            if item.published_at is None:
-                continue
-            # published_at уже в секундах — нормализуется в parser._published_at.
-            if current - item.published_at > spec.max_age:
-                continue
-
-        result.append(item)
-    return result
+    return [
+        item
+        for item in items
+        if all(criterion(item, spec, current) for criterion in _CRITERIA)
+    ]

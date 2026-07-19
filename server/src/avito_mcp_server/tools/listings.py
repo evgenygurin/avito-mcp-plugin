@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
-
 from fastmcp import Context, FastMCP
-from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from ..config import build_http_client
 from ..models import Listing
 from ..parser import parse_listing_detail
-from ..utils import extract_listing_id
+from ..utils import to_listing_url
+from .execution import run_blocking
 
 
 def register(mcp: FastMCP) -> None:
@@ -37,12 +35,7 @@ def register(mcp: FastMCP) -> None:
         ``with_views`` добавляет поле просмотров (отдельный запрос на Avito).
         Требует настроенных прокси/кук — см. .env.example.
         """
-        if id_or_url.startswith(("http://", "https://")):
-            url = id_or_url
-        else:
-            listing_id = extract_listing_id(id_or_url)
-            url = f"https://www.avito.ru/items/{listing_id}"
-
+        url = to_listing_url(id_or_url)
         await ctx.info(f"get_listing: {url}")
 
         def _run() -> Listing:
@@ -53,7 +46,4 @@ def register(mcp: FastMCP) -> None:
                 raise RuntimeError("не удалось извлечь данные объявления из страницы")
             return listing
 
-        try:
-            return await asyncio.to_thread(_run)
-        except Exception as exc:
-            raise ToolError(f"не удалось получить объявление: {exc}") from exc
+        return await run_blocking(_run, failure="не удалось получить объявление")

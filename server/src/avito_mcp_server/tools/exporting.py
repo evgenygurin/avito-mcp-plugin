@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Literal
-
 from fastmcp import Context, FastMCP
-from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
+from ..export.exporter import ExportFormat
 from ..export.exporter import export_listings as do_export
 from ..models import ExportResult, Listing
-
-ExportFormat = Literal["xlsx", "json", "csv"]
+from .execution import run_blocking
 
 
 def register(mcp: FastMCP) -> None:
@@ -45,7 +41,4 @@ def register(mcp: FastMCP) -> None:
                 count=len(items),
             )
 
-        try:
-            return await asyncio.to_thread(_run)
-        except Exception as exc:
-            raise ToolError(f"не удалось экспортировать: {exc}") from exc
+        return await run_blocking(_run, failure="не удалось экспортировать")

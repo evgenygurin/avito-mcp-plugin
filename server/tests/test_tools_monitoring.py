@@ -4,6 +4,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
+import avito_mcp_server.tools.catalog as catalog_mod
 import avito_mcp_server.tools.monitoring as mon_mod
 from fakes import FakeStorage
 
@@ -65,10 +66,10 @@ class TestScanNewListings:
         db.upsert_seen(2, "/x_2", "price dropped", 1000)
         db.upsert_seen(3, "/x_3", "price same", 1000)
 
-        monkeypatch.setattr(mon_mod, "page_pause", lambda: 0.0)
-        monkeypatch.setattr(mon_mod, "build_http_client", _FakeClient)
+        monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+        monkeypatch.setattr(catalog_mod, "build_http_client", _FakeClient)
         monkeypatch.setattr(mon_mod, "build_storage", lambda: db)
-        monkeypatch.setattr(mon_mod, "fetch_catalog", lambda c, u: ("ok", CATALOG))
+        monkeypatch.setattr(catalog_mod, "fetch_catalog", lambda c, u: ("ok", CATALOG))
 
         async with Client(_mcp()) as client:
             res = await client.call_tool(
@@ -98,10 +99,10 @@ class TestScanNewListings:
             seen.append(url)
             return ("ok", page1 if len(seen) == 1 else page2)
 
-        monkeypatch.setattr(mon_mod, "page_pause", lambda: 0.0)
-        monkeypatch.setattr(mon_mod, "build_http_client", _FakeClient)
+        monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+        monkeypatch.setattr(catalog_mod, "build_http_client", _FakeClient)
         monkeypatch.setattr(mon_mod, "build_storage", lambda: db)
-        monkeypatch.setattr(mon_mod, "fetch_catalog", _fetch)
+        monkeypatch.setattr(catalog_mod, "fetch_catalog", _fetch)
 
         async with Client(_mcp()) as client:
             res = await client.call_tool(
@@ -126,10 +127,10 @@ class TestScanNewListings:
                 }
             ]
         }
-        monkeypatch.setattr(mon_mod, "page_pause", lambda: 0.0)
-        monkeypatch.setattr(mon_mod, "build_http_client", _FakeClient)
+        monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+        monkeypatch.setattr(catalog_mod, "build_http_client", _FakeClient)
         monkeypatch.setattr(mon_mod, "build_storage", lambda: db)
-        monkeypatch.setattr(mon_mod, "fetch_catalog", lambda c, u: ("ok", catalog))
+        monkeypatch.setattr(catalog_mod, "fetch_catalog", lambda c, u: ("ok", catalog))
 
         async with Client(_mcp()) as client:
             first = await client.call_tool(
@@ -162,10 +163,12 @@ class TestScanNewListings:
                 for i in range(1, 51)
             ]
         }
-        monkeypatch.setattr(mon_mod, "page_pause", lambda: 0.0)
-        monkeypatch.setattr(mon_mod, "build_http_client", _FakeClient)
+        monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+        monkeypatch.setattr(catalog_mod, "build_http_client", _FakeClient)
         monkeypatch.setattr(mon_mod, "build_storage", lambda: db)
-        monkeypatch.setattr(mon_mod, "fetch_catalog", lambda c, u: ("ok", big_catalog))
+        monkeypatch.setattr(
+            catalog_mod, "fetch_catalog", lambda c, u: ("ok", big_catalog)
+        )
 
         async with Client(_mcp()) as client:
             res = await client.call_tool(
@@ -179,10 +182,12 @@ class TestScanNewListings:
 
     async def test_non_ok_page_errors(self, monkeypatch) -> None:
         db = FakeStorage()
-        monkeypatch.setattr(mon_mod, "page_pause", lambda: 0.0)
-        monkeypatch.setattr(mon_mod, "build_http_client", _FakeClient)
+        monkeypatch.setattr(catalog_mod, "page_pause", lambda: 0.0)
+        monkeypatch.setattr(catalog_mod, "build_http_client", _FakeClient)
         monkeypatch.setattr(mon_mod, "build_storage", lambda: db)
-        monkeypatch.setattr(mon_mod, "fetch_catalog", lambda c, u: ("softblock", None))
+        monkeypatch.setattr(
+            catalog_mod, "fetch_catalog", lambda c, u: ("softblock", None)
+        )
 
         async with Client(_mcp()) as client:
             with pytest.raises(ToolError):

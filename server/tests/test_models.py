@@ -114,7 +114,7 @@ class TestNotificationResult:
 
 def test_proxy_probe_masks_credentials() -> None:
     # В строке прокси лежат логин и пароль — наружу отдаём только host:port.
-    from avito_mcp_server.models import mask_proxy
+    from avito_mcp_server.utils import mask_proxy
 
     assert mask_proxy("user:secret@1.2.3.4:8000") == "1.2.3.4:8000"
     assert mask_proxy("1.2.3.4:8000") == "1.2.3.4:8000"

@@ -167,3 +167,13 @@ def test_small_xlsx_without_path_still_works() -> None:
     content, written_path = export_listings([Listing(id=1, title="x")], "xlsx")
     assert written_path is None
     assert content
+
+
+def test_registry_matches_declared_formats() -> None:
+    # ExportFormat — контракт MCP-схемы, _EXPORTERS — реальные стратегии.
+    # Разъехавшись, они дают тулзу, обещающую формат, которого нет.
+    from typing import get_args
+
+    from avito_mcp_server.export.exporter import _EXPORTERS, ExportFormat
+
+    assert set(get_args(ExportFormat)) == set(_EXPORTERS)
