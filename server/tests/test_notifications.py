@@ -79,9 +79,7 @@ def test_vk_error_body_is_not_success(monkeypatch) -> None:
             {"error": {"error_code": 5, "error_msg": "User authorization failed"}}
         )
 
-    monkeypatch.setattr(
-        "avito_mcp_server.notifications.sender.httpx.post", _error_post
-    )
+    monkeypatch.setattr("avito_mcp_server.notifications.sender.httpx.post", _error_post)
     with pytest.raises(RuntimeError, match="User authorization failed"):
         send_notification(
             channel="vk", message="привет", vk_token="t", vk_user_ids=["1"]

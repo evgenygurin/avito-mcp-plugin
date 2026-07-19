@@ -155,8 +155,12 @@ def test_published_at_normalized_to_seconds() -> None:
     # Avito отдаёт sortTimeStamp в миллисекундах, но встречаются и секунды.
     # Наружу модель должна отдавать ОДНУ единицу — epoch-секунды, иначе фильтр
     # max_age промахивается на три порядка.
-    ms = extract_facts({"items": [{"id": 1, "title": "x", "sortTimeStamp": 1783756196000}]})
+    ms = extract_facts(
+        {"items": [{"id": 1, "title": "x", "sortTimeStamp": 1783756196000}]}
+    )
     assert ms[0].published_at == 1783756196
 
-    sec = extract_facts({"items": [{"id": 2, "title": "x", "sortTimeStamp": 1700000000}]})
+    sec = extract_facts(
+        {"items": [{"id": 2, "title": "x", "sortTimeStamp": 1700000000}]}
+    )
     assert sec[0].published_at == 1700000000
