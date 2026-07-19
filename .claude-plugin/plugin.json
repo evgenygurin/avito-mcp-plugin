@@ -1,5 +1,7 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin.json",
   "name": "avito-mcp-plugin",
+  "displayName": "Avito MCP Plugin",
   "description": "Переносимый плагин для AI-агентов: skills + встроенный MCP-сервер (FastMCP v3) для парсинга и мониторинга Avito — поиск объявлений, отслеживание цен, экспорт, уведомления",
   "version": "0.1.0",
   "author": {

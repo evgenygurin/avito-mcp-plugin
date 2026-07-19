@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  server:
+    name: MCP-сервер (lint + types + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Синхронизировать зависимости
+        run: uv sync --dev
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: mypy
+        run: uv run mypy src
+
+      # Тесты хранилища требуют живой Postgres и пропускаются без DSN — это
+      # ожидаемо: подменять Postgres другой СУБД нельзя (диалектный upsert и
+      # timestamptz ведут себя иначе).
+      - name: pytest
+        run: uv run pytest -q
+
+  manifests:
+    name: Манифесты плагина
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Синхронность версий в 5 манифестах
+        run: python3 scripts/check_versions.py

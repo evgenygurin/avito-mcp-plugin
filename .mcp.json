@@ -8,7 +8,8 @@
       "avito-mcp-server"
     ],
     "env": {
-      "LOG_LEVEL": "info"
+      "LOG_LEVEL": "info",
+      "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"
     }
   }
 }
