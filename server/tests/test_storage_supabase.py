@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import text
 
 from avito_mcp_server.storage.models import PriceHistory, ProxyCooldown, SeenItem
-from avito_mcp_server.storage.supabase import SupabaseStorage, normalize_dsn
+from avito_mcp_server.storage.supabase import SeenRow, SupabaseStorage, normalize_dsn
 
 DSN = os.getenv("AVITO_SUPABASE_DSN", "").strip()
 requires_db = pytest.mark.skipif(not DSN, reason="AVITO_SUPABASE_DSN не задан")
@@ -43,7 +43,9 @@ class TestSchema:
         from sqlalchemy.dialects import postgresql
         from sqlalchemy.schema import CreateTable
 
-        ddl = str(CreateTable(PriceHistory.__table__).compile(dialect=postgresql.dialect()))
+        ddl = str(
+            CreateTable(PriceHistory.__table__).compile(dialect=postgresql.dialect())
+        )
         assert "GENERATED ALWAYS AS IDENTITY" in ddl
         assert "SERIAL" not in ddl
 
@@ -131,6 +133,62 @@ class TestAgainstPostgres:
             store.upsert_seen(999000005, "/x_5", "квартира", price)
             time.sleep(0.01)  # порядок по seen_at должен быть устойчивым
         assert [p for p, _ in store.get_price_history(999000005)] == [80.0, 90.0, 100.0]
+
+    def test_fetch_seen_distinguishes_absent_from_priceless(
+        self, store: SupabaseStorage
+    ) -> None:
+        # Ключевая семантика: наличие ключа = «видели раньше», значение = цена.
+        # Объявление без цены существует, но цены не имеет — этого различия
+        # не давал get_previous_price, из-за чего новизну приходилось узнавать
+        # отдельным запросом.
+        store.upsert_seen(999000010, "/x_10", "с ценой", 500.0)
+        store.upsert_seen(999000011, "/x_11", "без цены", None)
+
+        seen = store.fetch_seen([999000010, 999000011, 999999998])
+
+        assert seen[999000010] == 500.0
+        assert 999000011 in seen and seen[999000011] is None
+        assert 999999998 not in seen
+
+    def test_fetch_seen_on_empty_input_makes_no_query(
+        self, store: SupabaseStorage
+    ) -> None:
+        assert store.fetch_seen([]) == {}
+
+    def test_upsert_seen_many_inserts_and_updates_in_one_call(
+        self, store: SupabaseStorage
+    ) -> None:
+        store.upsert_seen_many(
+            [
+                SeenRow(id=999000012, url="/x_12", title="первое", price=100.0),
+                SeenRow(id=999000013, url="/x_13", title="второе", price=200.0),
+            ]
+        )
+        assert store.fetch_seen([999000012, 999000013]) == {
+            999000012: 100.0,
+            999000013: 200.0,
+        }
+
+        # Повторный батч обновляет цену и продлевает историю.
+        store.upsert_seen_many(
+            [SeenRow(id=999000012, url="/x_12", title="первое", price=90.0)]
+        )
+        assert store.fetch_seen([999000012])[999000012] == 90.0
+        assert [p for p, _ in store.get_price_history(999000012)] == [90.0, 100.0]
+
+    def test_upsert_seen_many_skips_history_for_priceless_rows(
+        self, store: SupabaseStorage
+    ) -> None:
+        store.upsert_seen_many(
+            [SeenRow(id=999000014, url="/x_14", title="гараж", price=None)]
+        )
+        assert store.get_price_history(999000014) == []
+        assert 999000014 in store.fetch_seen([999000014])
+
+    def test_upsert_seen_many_on_empty_input_is_noop(
+        self, store: SupabaseStorage
+    ) -> None:
+        store.upsert_seen_many([])  # не должно падать на пустом VALUES
 
 
 class TestEngineSetup:

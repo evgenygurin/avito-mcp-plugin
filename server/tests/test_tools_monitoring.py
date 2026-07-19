@@ -127,6 +127,41 @@ class TestScanNewListings:
         assert first.data.new_count == 1
         assert second.data.new_count == 0, "второй скан не должен считать его новым"
 
+    async def test_storage_roundtrips_do_not_grow_with_catalog_size(
+        self, monkeypatch
+    ) -> None:
+        # N+1 к Postgres: на каждое объявление шли get_previous_price + upsert_seen,
+        # то есть на странице в 50 объявлений — сотня round-trip'ов в облачную БД,
+        # дольше самого парсинга. Число обращений должно зависеть от числа
+        # страниц, а не от числа объявлений.
+        db = FakeStorage()
+        big_catalog = {
+            "items": [
+                {
+                    "id": i,
+                    "title": f"объявление {i}",
+                    "priceDetailed": {"value": 1000 + i},
+                    "location": {"name": "NN"},
+                    "urlPath": f"/x_{i}",
+                }
+                for i in range(1, 51)
+            ]
+        }
+        monkeypatch.setattr(mon_mod, "page_pause", lambda: 0.0)
+        monkeypatch.setattr(mon_mod, "build_http_client", _FakeClient)
+        monkeypatch.setattr(mon_mod, "build_storage", lambda: db)
+        monkeypatch.setattr(mon_mod, "fetch_catalog", lambda c, u: ("ok", big_catalog))
+
+        async with Client(_mcp()) as client:
+            res = await client.call_tool(
+                "scan_new_listings", {"url": "https://www.avito.ru/x"}
+            )
+
+        assert res.data.new_count == 50, "все 50 объявлений видим впервые"
+        assert db.calls <= 4, (
+            f"обращений к хранилищу: {db.calls} — должно быть O(1), а не O(объявлений)"
+        )
+
     async def test_non_ok_page_errors(self, monkeypatch) -> None:
         db = FakeStorage()
         monkeypatch.setattr(mon_mod, "page_pause", lambda: 0.0)

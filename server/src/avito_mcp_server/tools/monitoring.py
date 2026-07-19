@@ -12,6 +12,7 @@ from ..filters.filters import FilterSpec, apply_filters
 from ..http.client import fetch_catalog
 from ..models import PriceHistoryResult, PricePoint, ScanItem, ScanResult
 from ..parser import walk_pages
+from ..storage.supabase import SeenRow
 from ..utils import extract_listing_id
 
 
@@ -57,21 +58,20 @@ def register(mcp: FastMCP) -> None:
             found = walk_pages(fetch_catalog, client, url, pages, pause=page_pause())
             listings = apply_filters(found, spec)
 
+            # Одна выборка на страницу вместо запроса на объявление: база
+            # облачная, и раньше сотня round-trip'ов занимала больше времени,
+            # чем сам парсинг. Наличие id в `seen` = «видели раньше», значение =
+            # прошлая цена; без этого различия объявления без цены считались
+            # новыми при каждом скане.
+            seen = db.fetch_seen([listing.id for listing in listings])
+
             items: list[ScanItem] = []
             for listing in listings:
-                prev_price = db.get_previous_price(listing.id)
-                # Новизну определяет сам upsert: `prev_price is None` означало бы
-                # «новое» и для объявлений без цены — они попадали в выдачу при
-                # каждом скане.
-                is_new = db.upsert_seen(
-                    listing.id,
-                    listing.url,
-                    listing.title,
-                    listing.price,
-                )
-                if is_new:
+                if listing.id not in seen:
                     items.append(ScanItem(listing=listing, is_new=True))
-                elif (
+                    continue
+                prev_price = seen[listing.id]
+                if (
                     prev_price is not None
                     and listing.price is not None
                     and listing.price < prev_price
@@ -83,6 +83,18 @@ def register(mcp: FastMCP) -> None:
                             price_delta=prev_price - listing.price,
                         )
                     )
+
+            db.upsert_seen_many(
+                [
+                    SeenRow(
+                        id=listing.id,
+                        url=listing.url,
+                        title=listing.title,
+                        price=listing.price,
+                    )
+                    for listing in listings
+                ]
+            )
             return ScanResult(items=items)
 
         try:

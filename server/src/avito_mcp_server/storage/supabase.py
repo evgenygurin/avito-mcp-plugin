@@ -9,9 +9,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import Engine, create_engine, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -20,6 +21,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from .models import PriceHistory, ProxyCooldown, SeenItem
 
 log = logging.getLogger(__name__)
+
+
+class SeenRow(NamedTuple):
+    """Объявление для записи в ``seen_items`` — единица пакетного upsert."""
+
+    id: int
+    url: str | None
+    title: str | None
+    price: float | None
 
 
 def normalize_dsn(dsn: str) -> str:
@@ -90,6 +100,70 @@ class SupabaseStorage:
     def _session(self) -> Session:
         return self._session_factory()
 
+    def fetch_seen(self, item_ids: Iterable[int]) -> dict[int, float | None]:
+        """Известные объявления из числа запрошенных: ``{id: последняя цена}``.
+
+        Наличие ключа означает «видели раньше», значение — цену (``None``, если
+        объявление без цены). Одним запросом на всю страницу каталога вместо
+        запроса на объявление: база облачная, и round-trip дороже самой выборки.
+        """
+        ids = list(item_ids)
+        if not ids:
+            return {}
+        with self._session() as session:
+            rows = session.execute(
+                select(SeenItem.id, SeenItem.price).where(SeenItem.id.in_(ids))
+            ).all()
+        return {
+            int(item_id): None if price is None else float(price)
+            for item_id, price in rows
+        }
+
+    def upsert_seen_many(self, rows: Sequence[SeenRow]) -> None:
+        """Вставить/обновить пачку объявлений и дописать историю цены.
+
+        Объявления и точки истории идут одной транзакцией: иначе при сбое
+        история разъедется с ``seen_items``.
+        """
+        if not rows:
+            return
+        with self._session() as session, session.begin():
+            stmt = insert(SeenItem).values(
+                [
+                    {
+                        "id": row.id,
+                        "url": row.url,
+                        "title": row.title,
+                        "price": row.price,
+                        "first_seen": func.now(),
+                        "last_seen": func.now(),
+                    }
+                    for row in rows
+                ]
+            )
+            session.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=[SeenItem.id],
+                    # excluded — значения из VALUES текущей строки: при пакетном
+                    # upsert у каждой строки они свои, поэтому литералы тут не
+                    # годятся (они бы записали всем одно и то же).
+                    set_={
+                        "url": stmt.excluded.url,
+                        "title": stmt.excluded.title,
+                        "price": stmt.excluded.price,
+                        "last_seen": func.now(),
+                    },
+                )
+            )
+            # Без цены точка истории бессмысленна.
+            session.add_all(
+                [
+                    PriceHistory(item_id=row.id, price=row.price)
+                    for row in rows
+                    if row.price is not None
+                ]
+            )
+
     def upsert_seen(
         self,
         item_id: int,
@@ -97,46 +171,14 @@ class SupabaseStorage:
         title: str | None,
         price: float | None,
     ) -> bool:
-        """Вставить/обновить объявление. ``True`` — видим впервые.
-
-        Запись объявления и точки истории идут одной транзакцией: иначе при сбое
-        история разъедется с ``seen_items``.
-        """
-        with self._session() as session, session.begin():
-            is_new = session.get(SeenItem, item_id) is None
-            stmt = (
-                insert(SeenItem)
-                .values(
-                    id=item_id,
-                    url=url,
-                    title=title,
-                    price=price,
-                    first_seen=func.now(),
-                    last_seen=func.now(),
-                )
-                .on_conflict_do_update(
-                    index_elements=[SeenItem.id],
-                    set_={
-                        "url": url,
-                        "title": title,
-                        "price": price,
-                        "last_seen": func.now(),
-                    },
-                )
-            )
-            session.execute(stmt)
-            # Без цены точка истории бессмысленна.
-            if price is not None:
-                session.add(PriceHistory(item_id=item_id, price=price))
+        """Вставить/обновить одно объявление. ``True`` — видим впервые."""
+        is_new = item_id not in self.fetch_seen([item_id])
+        self.upsert_seen_many([SeenRow(id=item_id, url=url, title=title, price=price)])
         return is_new
 
     def get_previous_price(self, item_id: int) -> float | None:
         """Последняя известная цена объявления (или ``None``)."""
-        with self._session() as session:
-            price = session.execute(
-                select(SeenItem.price).where(SeenItem.id == item_id)
-            ).scalar_one_or_none()
-        return None if price is None else float(price)
+        return self.fetch_seen([item_id]).get(item_id)
 
     def list_seen_ids(self) -> set[int]:
         with self._session() as session:
