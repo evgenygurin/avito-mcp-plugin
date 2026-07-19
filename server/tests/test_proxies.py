@@ -44,6 +44,13 @@ def test_server_rotate_is_noop() -> None:
     assert ServerProxy("u:p@h:1").rotate() is False
 
 
+def test_mobile_rotate_handles_invalid_change_url() -> None:
+    # httpx.InvalidURL наследует Exception, а НЕ HTTPError (проверено в httpx
+    # 0.28.1) — опечатка/битый плейсхолдер в AVITO_PROXY_CHANGE_URL не должны
+    # ронять rotate() сырым исключением: контракт метода — вернуть False.
+    assert MobileProxy("u:p@h:1", "http://host:notaport/").rotate() is False
+
+
 def test_pool_from_comma_separated_list() -> None:
     # Один выжженный IP не должен останавливать работу: пул перебирает адреса.
     pool = build_proxy(proxy="u:p@h1:1, u:p@h2:2", change_url="")
@@ -154,6 +161,13 @@ class TestProxyListUrl:
         monkeypatch.setattr(factory_mod.httpx, "get", boom)
         assert factory_mod.fetch_proxy_list("https://api.example/list") == []
 
+    def test_invalid_url_returns_empty(self) -> None:
+        # httpx.InvalidURL наследует Exception, а НЕ HTTPError (проверено в
+        # httpx 0.28.1) — кривой AVITO_PROXY_LIST_URL (опечатка, невалидный
+        # порт) должен падать на тот же путь, что и обычный сетевой сбой,
+        # а не пробрасывать сырое исключение через весь build_http_client().
+        assert factory_mod.fetch_proxy_list("http://user:pass@host:notaport/path") == []
+
 
 def test_rotate_ignores_shell_proxy_env(monkeypatch) -> None:
     # change-IP URL — служебный запрос к кабинету провайдера. С trust_env=True
@@ -184,6 +198,27 @@ def test_rotate_follows_redirects(monkeypatch) -> None:
         proxy_mod.httpx, "get", lambda url, **kw: (captured.update(kw), _R())[1]
     )
     MobileProxy("u:p@h:1", "https://chg?k=1").rotate()
+    assert captured.get("follow_redirects") is True
+
+
+def test_proxy_list_follows_redirects(monkeypatch) -> None:
+    # AVITO_PROXY_LIST_URL — пользовательский URL кабинета: 301/302
+    # (http->https, trailing slash, CDN) обычны. httpx (в отличие от requests)
+    # по умолчанию редиректы не проходит — без follow_redirects список тихо
+    # терялся бы, и код фоллбэкал на одиночный AVITO_PROXY.
+    captured: dict = {}
+
+    class _R:
+        status_code = 200
+        text = "u:p@h1:1"
+
+        def json(self):
+            raise ValueError("не json")
+
+    monkeypatch.setattr(
+        factory_mod.httpx, "get", lambda url, **kw: (captured.update(kw), _R())[1]
+    )
+    factory_mod.fetch_proxy_list("https://api.example/list")
     assert captured.get("follow_redirects") is True
 
 

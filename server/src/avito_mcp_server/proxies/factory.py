@@ -37,8 +37,12 @@ def fetch_proxy_list(url: str, timeout: float = 15.0) -> list[str]:
     ``AVITO_PROXY``.
     """
     try:
-        resp = httpx.get(url, timeout=timeout, trust_env=False)
-    except httpx.HTTPError as exc:
+        resp = httpx.get(url, timeout=timeout, trust_env=False, follow_redirects=True)
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        # InvalidURL — НЕ подкласс HTTPError (проверено в httpx 0.28.1):
+        # опечатка/битый плейсхолдер в AVITO_PROXY_LIST_URL иначе пробросил бы
+        # сырое исключение через build_http_client() вместо фоллбэка на
+        # AVITO_PROXY.
         log.warning("не удалось получить список прокси: %s", exc)
         return []
     if resp.status_code != 200:

@@ -56,18 +56,22 @@ class MobileProxy(Proxy):
         return f"http://{self.url}"
 
     def rotate(self) -> bool:
-        # Параметр клеим через URL, а не строкой: change_url может уже иметь
-        # или не иметь query. trust_env=False — служебный запрос к кабинету не
-        # должен уходить через HTTPS_PROXY из шелла (то есть через сам прокси).
-        url = httpx.URL(self.change_url).copy_merge_params({"format": "json"})
         try:
+            # Параметр клеим через URL, а не строкой: change_url может уже
+            # иметь или не иметь query. trust_env=False — служебный запрос к
+            # кабинету не должен уходить через HTTPS_PROXY из шелла (то есть
+            # через сам ротируемый прокси). Построение URL — внутри try:
+            # httpx.InvalidURL (опечатка/битый порт в change_url) не наследует
+            # HTTPError (проверено в httpx 0.28.1) и иначе пробросился бы сырым
+            # исключением вместо контрактного False.
+            url = httpx.URL(self.change_url).copy_merge_params({"format": "json"})
             resp = httpx.get(
                 url,
                 timeout=self.timeout,
                 trust_env=False,
                 follow_redirects=True,
             )
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
             log.warning("ротация IP не удалась: %s", exc)
             return False
         if resp.status_code != 200:
