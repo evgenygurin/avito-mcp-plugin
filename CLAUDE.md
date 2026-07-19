@@ -17,9 +17,12 @@
 `loaderData.data.catalog.items`. Раздача `skills/` по MCP (`SkillsProvider`) работает.
 
 **7 MCP-тулз реализованы** (`search_listings`, `get_listing`, `scan_new_listings`,
-`check_proxy_health`, `send_notification`, `export_listings`, `get_price_history`)
-плюс `ping`/`official_api_call`. Сетевую часть **живьём не проверить без чистого
-RU-прокси**: с домашнего IP Avito отдаёт 403/429 после 2–3 запросов.
+`check_proxy_health`, `send_notification`, `export_listings`, `get_price_history`).
+`ping`/`official_api_call` удалены вместе с официальным API (см. `docs/roadmap.md`,
+«Линия A»). Сетевая часть **проверена живьём** (2026-07-19): `check_proxy_health`,
+`search_listings` и `scan_new_listings` (dedup + история цены в Postgres) прошли
+end-to-end на купленном RU-прокси (spfa + MobileProxy). С домашнего IP без прокси
+Avito по-прежнему отдаёт 403/429 после 2–3 запросов — нужен `AVITO_PROXY`.
 Статус скилов — в [`docs/skills.md`](docs/skills.md); план — в [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Переменные окружения
@@ -108,7 +111,8 @@ avito_mcp_server/
 - Тулзы: `async def`, `Context` для логов/прогресса, docstring = «что делает + когда
   вызывать». Возврат — Pydantic-модель (structured output, напр. `SearchResult`).
   Ошибки наружу — через `ToolError`.
-- < 20 тулз на сервер (иначе падает точность выбора моделью). Сейчас 9.
+- < 20 тулз на сервер (иначе падает точность выбора моделью). Сейчас 7
+  (+ раздача skills по MCP как ресурсы, не тулзы).
 
 **Тесты** (`server/tests/`, `asyncio_mode="auto"` → async-тесты без декоратора):
 in-memory `Client(mcp)`; сетевая граница мокается через `httpx.MockTransport`
