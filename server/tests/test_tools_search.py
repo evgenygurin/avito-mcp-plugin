@@ -33,6 +33,7 @@ def _mcp() -> FastMCP:
 
 
 async def test_search_listings_returns_filtered(monkeypatch) -> None:
+    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
     monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
     monkeypatch.setattr(
         search_mod, "fetch_catalog", lambda client, url: ("ok", CATALOG)
@@ -52,7 +53,98 @@ async def test_search_listings_returns_filtered(monkeypatch) -> None:
     assert res.data.items[0].url == "https://www.avito.ru/x_1"
 
 
+async def test_search_listings_walks_pages(monkeypatch) -> None:
+    # pages=2 → идём по pager.next; объявления страниц склеиваются.
+    page1 = {
+        "items": [dict(CATALOG["items"][0])],
+        "pager": {"next": "/nn/kvartiry?p=2", "current": 1},
+    }
+    page2 = {"items": [dict(CATALOG["items"][1])], "pager": {"current": 2}}
+    seen: list[str] = []
+
+    def _fetch(client, url):
+        seen.append(url)
+        return ("ok", page1 if len(seen) == 1 else page2)
+
+    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(search_mod, "fetch_catalog", _fetch)
+
+    async with Client(_mcp()) as client:
+        res = await client.call_tool(
+            "search_listings", {"url": "https://www.avito.ru/nn/kvartiry", "pages": 2}
+        )
+
+    assert seen == [
+        "https://www.avito.ru/nn/kvartiry",
+        "https://www.avito.ru/nn/kvartiry?p=2",
+    ]
+    assert res.data.count == 2
+    assert [i.id for i in res.data.items] == [1, 2]
+
+
+async def test_search_listings_stops_on_last_page(monkeypatch) -> None:
+    # Запрошено больше страниц, чем есть: без pager.next обход прекращается,
+    # лишних запросов не делаем и ошибку не бросаем.
+    calls: list[str] = []
+
+    def _fetch(client, url):
+        calls.append(url)
+        return ("ok", {"items": [dict(CATALOG["items"][0])], "pager": {"current": 1}})
+
+    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(search_mod, "fetch_catalog", _fetch)
+
+    async with Client(_mcp()) as client:
+        res = await client.call_tool(
+            "search_listings", {"url": "https://www.avito.ru/nn/kvartiry", "pages": 5}
+        )
+
+    assert len(calls) == 1
+    assert res.data.count == 1
+
+
+async def test_search_listings_dedupes_across_pages(monkeypatch) -> None:
+    # Каталог сдвигается между запросами — одно объявление приходит дважды.
+    page = {
+        "items": [dict(CATALOG["items"][0])],
+        "pager": {"next": "/nn/kvartiry?p=2", "current": 1},
+    }
+    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(search_mod, "fetch_catalog", lambda client, url: ("ok", page))
+
+    async with Client(_mcp()) as client:
+        res = await client.call_tool(
+            "search_listings", {"url": "https://www.avito.ru/nn/kvartiry", "pages": 3}
+        )
+
+    assert res.data.count == 1
+
+
+async def test_search_listings_explains_firewall(monkeypatch) -> None:
+    # При выжженном IP агент должен получить действие («нужен чистый RU-прокси»),
+    # а не сырой код статуса: ретраи без смены IP тут бесполезны.
+    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
+    monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
+    monkeypatch.setattr(
+        search_mod, "fetch_catalog", lambda client, url: ("firewall", None)
+    )
+
+    async with Client(_mcp()) as client:
+        with pytest.raises(ToolError) as exc:
+            await client.call_tool(
+                "search_listings", {"url": "https://www.avito.ru/nn"}
+            )
+
+    message = str(exc.value)
+    assert "IP" in message
+    assert "AVITO_PROXY" in message
+
+
 async def test_search_listings_errors_on_non_ok(monkeypatch) -> None:
+    monkeypatch.setattr(search_mod, "page_pause", lambda: 0.0)
     monkeypatch.setattr(search_mod, "build_http_client", lambda: object())
     monkeypatch.setattr(
         search_mod, "fetch_catalog", lambda client, url: ("softblock", None)

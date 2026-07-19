@@ -9,7 +9,15 @@ async def test_server_instantiates_and_serves_skills() -> None:
     async with Client(mcp) as client:
         names = {t.name for t in await client.list_tools()}
         # Парсинг-тулзы зарегистрированы.
-        assert {"search_listings", "check_proxy_health"} <= names
+        assert {
+            "search_listings",
+            "check_proxy_health",
+            "get_listing",
+            "scan_new_listings",
+            "get_price_history",
+            "export_listings",
+            "send_notification",
+        } <= names
         # Удалённых тулз официального API нет.
         assert names.isdisjoint(
             {"ping", "official_api_call", "get_own_items", "get_account_info"}
