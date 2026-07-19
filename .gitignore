@@ -28,3 +28,6 @@ htmlcov/
 .env
 .env.*
 !.env.example
+
+# Личные оверрайды разрешений/настроек Claude Code
+.claude/settings.local.json
