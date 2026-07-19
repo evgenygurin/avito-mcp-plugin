@@ -80,10 +80,13 @@ avito_mcp_server/
 ├── notifications/      # Telegram, VK
 ├── filters/            # keyword / seller / price / geo / max_age
 ├── storage/            # Postgres (Supabase), SQLAlchemy ORM: dedup + история цены + cooldown
+│                       #   base.py — Protocol'ы ListingStore / ProxyCooldownStore (DIP)
 ├── models.py           # Listing / SearchResult (факты + опции)
-├── parser.py           # ядро: find_json_on_page + пагинация
+├── parser/             # ядро: state.py (SSR-JSON + PageKind) / mapping.py (→ Listing)
+│                       #   / pagination.py (обход); импорт — через фасад parser/
 ├── skills_provider.py  # раздача skills по MCP
 ├── tools/              # тонкий MCP-слой поверх ядра (register(mcp) на группу)
+│                       #   catalog.py — общий обход каталога, execution.py — поток + ToolError
 └── server.py           # инстанс + main() + регистрация групп тулз
 ```
 

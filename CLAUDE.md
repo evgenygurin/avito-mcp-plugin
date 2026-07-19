@@ -98,11 +98,13 @@ avito_mcp_server/
 ├── export/        # xlsx / json / csv
 ├── notifications/ # Telegram, VK
 ├── filters/       # keyword/seller/price/geo/max_age
-├── storage/       # models.py (ORM) + supabase.py: dedup, история цены, cooldown прокси
+├── storage/       # models.py (ORM) + rows.py + base.py (Protocol) + supabase.py
 ├── models.py      # Listing / SearchResult (факты + опции)
-├── parser.py      # ядро: find_json_on_page + пагинация каталога
+├── parser/        # ядро: state.py (SSR-JSON + PageKind), mapping.py (→ Listing),
+│                  #   pagination.py (обход каталога); фасад — parser/__init__.py
 ├── skills_provider.py  # раздача skills по MCP (остаётся)
-├── tools/         # тонкий MCP-слой поверх ядра (register(mcp) на группу)
+├── tools/         # тонкий MCP-слой поверх ядра (register(mcp) на группу):
+│                  #   catalog.py (общий обход) + execution.py (поток + ToolError)
 └── server.py      # инстанс + main() + регистрация групп тулз
 ```
 
@@ -113,15 +115,24 @@ avito_mcp_server/
   Ошибки наружу — через `ToolError`.
 - < 20 тулз на сервер (иначе падает точность выбора моделью). Сейчас 7
   (+ раздача skills по MCP как ресурсы, не тулзы).
+- Общее для всех тулз — в `tools/`: `execution.run_blocking()` (поток + единый
+  `ToolError`) и `catalog.collect_listings()` (обход каталога + фильтры). Свой
+  `asyncio.to_thread` + `try/except` в новой тулзе не пиши.
+- Статус страницы — `parser.PageKind` (`StrEnum`), а не строковый литерал; сравнения
+  вида `kind == "ok"` продолжают работать, но ветвиться лучше по членам enum.
+- Расширяемые точки устроены реестрами, а не `if/elif`: `export._EXPORTERS`,
+  `notifications.sender._NOTIFIERS`, `cookies.factory._PROVIDERS`,
+  `filters.filters._CRITERIA`. Новый формат/канал/провайдер/критерий — запись в реестр.
 
 **Тесты** (`server/tests/`, `asyncio_mode="auto"` → async-тесты без декоратора):
 in-memory `Client(mcp)`; сетевая граница мокается через `httpx.MockTransport`
 (мок транспорта, не методов клиента); фабрики подменяются `monkeypatch`. Новый код —
 по TDD (`superpowers:test-driven-development`).
 
-- Тулзы мокают `fetch_catalog` **в своём модуле** (`search_mod.fetch_catalog`), поэтому
-  общий обход страниц `parser.walk_pages` принимает `fetch` аргументом — иначе моки не
-  сработают. Там же зануляй `page_pause`, иначе тесты реально спят.
+- Сетевая граница тулз поиска и мониторинга — одна: `tools/catalog.py`. Мокать надо
+  `catalog_mod.fetch_catalog` / `build_http_client` (а не одноимённые в `tools/search.py`),
+  поэтому общий обход `parser.walk_pages` принимает `fetch` аргументом. Там же зануляй
+  `catalog_mod.page_pause`, иначе тесты реально спят.
 - `res.data` у `Client(mcp)` — не Pydantic-модель; для проверки всего ответа целиком
   бери `res.structured_content`.
 - Тулзы тестируются на `FakeStorage` из [`tests/fakes.py`](server/tests/fakes.py)

@@ -58,7 +58,7 @@ server/
 │   ├── __init__.py
 │   ├── server.py                      # FastMCP инстанс + main(), регистрация групп тулз
 │   ├── models.py                      # доменные Pydantic-модели (Listing, SearchResult)
-│   ├── parser.py                      # ядро: find_json_on_page + пагинация
+│   ├── parser/                        # ядро: state / mapping / pagination (фасад в __init__)
 │   ├── cookies/                       # провайдеры кук: spfa / own / playwright
 │   ├── proxies/                       # Mobile/Server/None + rotate-until-clean
 │   ├── http/                          # curl_cffi клиент (impersonate, retry)
@@ -67,6 +67,7 @@ server/
 │   ├── filters/                       # keyword/seller/price/geo/max_age
 │   ├── storage/                       # Postgres (Supabase) через SQLAlchemy ORM
 │   ├── skills_provider.py             # раздача skills/ по MCP (SkillsProvider)
-│   └── tools/                         # тонкий MCP-слой (register(mcp) на группу)
+│   └── tools/                         # тонкий MCP-слой (register(mcp) на группу):
+│                                      #   catalog.py, execution.py — общая часть тулз
 └── tests/                             # pytest: in-memory Client(mcp) + мок сетевой границы
 ```
