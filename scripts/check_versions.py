@@ -8,6 +8,7 @@ Exit 0 — все версии совпадают; exit 1 — рассинхро
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -43,12 +44,33 @@ def main() -> int:
     for path, version in sources.items():
         print(f"{version:<{width}}  {path}")
 
+    ok = True
     versions = set(sources.values())
     if len(versions) == 1:
         print(f"\nOK: все версии синхронны ({versions.pop()})")
-        return 0
-    print(f"\nFAIL: рассинхрон версий: {sorted(versions)}", file=sys.stderr)
-    return 1
+    else:
+        print(f"\nFAIL: рассинхрон версий: {sorted(versions)}", file=sys.stderr)
+        ok = False
+
+    # Имя плагина должно совпадать в манифесте и записи маркетплейса, иначе
+    # `/plugin install` не найдёт плагин по имени из marketplace.json.
+    plugin_name = _json(".claude-plugin/plugin.json", "name")
+    entry_name = _json(".claude-plugin/marketplace.json", "plugins", 0, "name")
+    if plugin_name != entry_name:
+        print(
+            f"FAIL: имя плагина расходится: plugin.json={plugin_name!r}, "
+            f"marketplace.json={entry_name!r}",
+            file=sys.stderr,
+        )
+        ok = False
+    elif not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", plugin_name):
+        # claude.ai marketplace sync отвергает имена не в kebab-case.
+        print(f"FAIL: имя {plugin_name!r} не в kebab-case", file=sys.stderr)
+        ok = False
+    else:
+        print(f"OK: имя плагина синхронно ({plugin_name})")
+
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

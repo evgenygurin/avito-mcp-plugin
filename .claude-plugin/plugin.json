@@ -1,6 +1,8 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin.json",
   "name": "avito-mcp-plugin",
-  "description": "Переносимый плагин для AI-агентов: skills + встроенный MCP-сервер (FastMCP v3) для работы с Avito — парсинг, официальный API, правовые guardrails",
+  "displayName": "Avito MCP Plugin",
+  "description": "Переносимый плагин для AI-агентов: skills + встроенный MCP-сервер (FastMCP v3) для парсинга и мониторинга Avito — поиск объявлений, отслеживание цен, экспорт, уведомления",
   "version": "0.1.0",
   "author": {
     "name": "evgenygurin",
@@ -16,5 +18,28 @@
     "scraping",
     "fastmcp",
     "python"
-  ]
+  ],
+  "userConfig": {
+    "spfa_api_key": {
+      "type": "string",
+      "title": "SPFA API key",
+      "description": "Ключ провайдера кук spfa (AVITO_COOKIE_PROVIDER=spfa). Не обязателен для провайдеров own/playwright.",
+      "sensitive": true,
+      "required": false
+    },
+    "avito_proxy": {
+      "type": "string",
+      "title": "Avito proxy",
+      "description": "user:pass@host:port; список через запятую подключает ProxyPool.",
+      "sensitive": true,
+      "required": false
+    },
+    "avito_supabase_dsn": {
+      "type": "string",
+      "title": "Supabase DSN",
+      "description": "postgresql://... DSN для мониторинга, истории цен и cooldown прокси.",
+      "sensitive": true,
+      "required": false
+    }
+  }
 }

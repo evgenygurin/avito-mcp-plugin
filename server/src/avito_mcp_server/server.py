@@ -1,47 +1,33 @@
 """FastMCP-сервер avito-mcp-server.
 
-СТАТУС: заготовка (skeleton). Содержит рабочий инстанс FastMCP и одну
-диагностическую тулзу `ping` для проверки связи. Доменные тулзы (search_listings,
-get_listing, official_api_call, …) добавляются в пакет `tools/` по мере
-реализации — см. docs/mcp-server.md и docs/avito-scraping.md.
+Регистрирует 7 MCP-тулз поверх движка парсинга и раздачу ``skills/`` по MCP.
+См. docs/mcp-server.md.
 """
 
 from __future__ import annotations
 
 from fastmcp import FastMCP
-from pydantic import BaseModel
 
 from .skills_provider import register_skills
-from .tools import official_api, own_items
+from .tools import diagnostics, exporting, listings, monitoring, notifications, search
 
 mcp = FastMCP("avito-mcp-server")
 
+# Парсинг-тулзы поверх движка.
+search.register(mcp)
+listings.register(mcp)
+diagnostics.register(mcp)
 
-class Pong(BaseModel):
-    """Ответ диагностической тулзы."""
+# Мониторинг (состояние / история цены).
+monitoring.register(mcp)
 
-    message: str
-    length: int
-
-
-@mcp.tool
-async def ping(message: str = "ping") -> Pong:
-    """Проверка связи с сервером. Возвращает сообщение и его длину.
-
-    Use for connectivity checks — доменной логики не несёт.
-    """
-    return Pong(message=message, length=len(message))
-
-
-official_api.register(mcp)
-own_items.register(mcp)
+# Сайд-эффекты: экспорт и уведомления.
+exporting.register(mcp)
+notifications.register(mcp)
 
 # Раздача skills/ по MCP (skill://<name>/…) — любому MCP-клиенту.
 # graceful: если каталог skills/ не найден, сервер работает без раздачи.
 register_skills(mcp)
-
-# TODO: зарегистрировать парсинг-тулзы (listings) после реализации слоя обхода
-# антибота — см. skills/scraping-avito и docs/avito-scraping.md.
 
 
 def main() -> None:

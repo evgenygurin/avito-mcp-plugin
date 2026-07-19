@@ -1,102 +1,121 @@
 """Тесты доменных Pydantic-моделей."""
 
-import pytest
-from pydantic import ValidationError
-
 from avito_mcp_server.models import (
-    AccountInfo,
+    ExportResult,
     Listing,
-    OwnItem,
-    OwnItemsResult,
-    SearchQuery,
+    NotificationResult,
+    PriceHistoryResult,
+    PricePoint,
+    ScanItem,
+    ScanResult,
     SearchResult,
 )
 
 
-class TestSearchQuery:
-    def test_defaults(self) -> None:
-        q = SearchQuery(query="iphone 15")
-        assert q.region is None
-        assert q.limit == 50
-
-    def test_rejects_empty_query(self) -> None:
-        with pytest.raises(ValidationError):
-            SearchQuery(query="   ")
-
-    def test_rejects_nonpositive_limit(self) -> None:
-        with pytest.raises(ValidationError):
-            SearchQuery(query="iphone", limit=0)
-
-    def test_rejects_limit_over_max(self) -> None:
-        with pytest.raises(ValidationError):
-            SearchQuery(query="iphone", limit=101)
-
-
 class TestListing:
-    def test_minimal_has_optional_price(self) -> None:
+    def test_minimal_has_optional_fields(self) -> None:
         item = Listing(id=1, title="iPhone 15")
         assert item.price is None
         assert item.params == {}
+        assert item.is_promotion is False
+        assert item.views is None
 
-    def test_full(self) -> None:
+    def test_full_facts(self) -> None:
         item = Listing(
-            id=1234567890,
-            title="iPhone 15 128GB",
-            price=65000.0,
-            url="https://www.avito.ru/moskva/telefony/x_1234567890",
-            region="Москва",
-            params={"Память": "128 ГБ"},
+            id=7890298070,
+            title="7-к. квартира, 306,5 м²",
+            price=98630444,
+            url="https://www.avito.ru/nizhniy_novgorod/kvartiry/x_7890298070",
+            address="Нижний Новгород",
+            params={"площадь": "306,5 м²"},
+            seller_id="brand",
+            is_promotion=True,
+            published_at=1700000000,
+            views=42,
         )
-        assert item.price == 65000.0
-        assert item.params["Память"] == "128 ГБ"
+        assert item.price == 98630444
+        assert item.address == "Нижний Новгород"
+        assert item.seller_id == "brand"
+        assert item.views == 42
+
+    def test_no_pii_phone_field(self) -> None:
+        # Телефоны продавцов (ПДн) не моделируем.
+        assert "phone" not in Listing.model_fields
 
 
 class TestSearchResult:
-    def test_count_is_derived_from_items(self) -> None:
+    def test_count_is_derived(self) -> None:
         res = SearchResult(items=[Listing(id=1, title="a"), Listing(id=2, title="b")])
         assert res.count == 2
 
-    def test_empty_result(self) -> None:
-        res = SearchResult(items=[])
-        assert res.count == 0
+    def test_empty(self) -> None:
+        assert SearchResult(items=[]).count == 0
 
 
-class TestOwnItem:
-    def test_minimal_needs_only_id(self) -> None:
-        item = OwnItem(id=42)
-        assert item.title is None
-        assert item.status is None
-        assert item.price is None
-
-    def test_ignores_unknown_api_fields(self) -> None:
-        item = OwnItem.model_validate(
-            {"id": 42, "status": "active", "unexpected": {"x": 1}}
-        )
-        assert item.status == "active"
-
-    def test_requires_id(self) -> None:
-        with pytest.raises(ValidationError):
-            OwnItem.model_validate({"title": "нет id"})
-
-
-class TestOwnItemsResult:
-    def test_count_is_derived(self) -> None:
-        res = OwnItemsResult(items=[OwnItem(id=1), OwnItem(id=2)])
+class TestScanResult:
+    def test_counts_new_and_dropped(self) -> None:
+        items = [
+            ScanItem(listing=Listing(id=1, title="new"), is_new=True),
+            ScanItem(
+                listing=Listing(id=2, title="dropped", price=1000),
+                is_new=False,
+                price_delta=500,
+            ),
+        ]
+        res = ScanResult(items=items)
         assert res.count == 2
+        assert res.new_count == 1
+        assert res.dropped_count == 1
 
     def test_empty(self) -> None:
-        assert OwnItemsResult(items=[]).count == 0
+        res = ScanResult(items=[])
+        assert res.count == 0
+        assert res.new_count == 0
+        assert res.dropped_count == 0
 
 
-class TestAccountInfo:
-    def test_id_required_name_optional(self) -> None:
-        acc = AccountInfo(id=777)
-        assert acc.id == 777
-        assert acc.name is None
+class TestPriceHistoryResult:
+    def test_latest_price_and_count(self) -> None:
+        history = [
+            PricePoint(price=1000, seen_at=1700000000),
+            PricePoint(price=1200, seen_at=1699000000),
+        ]
+        res = PriceHistoryResult(listing_id=42, history=history)
+        assert res.count == 2
+        assert res.latest_price == 1000
 
-    def test_ignores_extra_personal_fields(self) -> None:
-        acc = AccountInfo.model_validate(
-            {"id": 777, "name": "Магазин", "email": "x@y.z", "phone": "+7999"}
+    def test_empty_history(self) -> None:
+        res = PriceHistoryResult(listing_id=42, history=[])
+        assert res.count == 0
+        assert res.latest_price is None
+
+
+class TestExportResult:
+    def test_export_result(self) -> None:
+        res = ExportResult(format="json", content='[{"id":1}]', count=1)
+        assert res.format == "json"
+        assert res.path is None
+        assert res.count == 1
+
+    def test_export_with_path(self) -> None:
+        res = ExportResult(format="xlsx", path="/tmp/out.xlsx", count=5)
+        assert res.content is None
+        assert res.path == "/tmp/out.xlsx"
+
+
+class TestNotificationResult:
+    def test_notification_ok(self) -> None:
+        res = NotificationResult(
+            channel="telegram", sent=True, targets=["123"], detail="ok"
         )
-        assert acc.name == "Магазин"
-        assert not hasattr(acc, "phone")
+        assert res.sent is True
+        assert res.targets == ["123"]
+
+
+def test_proxy_probe_masks_credentials() -> None:
+    # В строке прокси лежат логин и пароль — наружу отдаём только host:port.
+    from avito_mcp_server.utils import mask_proxy
+
+    assert mask_proxy("user:secret@1.2.3.4:8000") == "1.2.3.4:8000"
+    assert mask_proxy("1.2.3.4:8000") == "1.2.3.4:8000"
+    assert mask_proxy("") == ""

@@ -6,8 +6,10 @@
 
 - Прочитай [`CLAUDE.md`](CLAUDE.md) (инструкции для агентов и людей) и
   [`docs/architecture.md`](docs/architecture.md).
-- Ознакомься с **guardrails** по праву РФ — [`docs/avito-legal.md`](docs/avito-legal.md).
-  PR, реализующие «лобовой» обход капчи или сбор ПДн для перепродажи, не принимаются.
+- Проект нацелен на полнофункциональный парсер каталога Avito — полный фичесет
+  парсинга (поиск, карточка объявления, фото, характеристики, мониторинг цен).
+  Единственное сознательное исключение — `parse_phone` (сбор телефонов продавцов,
+  ПДн третьих лиц): PR, реализующие сбор телефонов, не принимаются.
 
 ## Workflow
 
@@ -61,5 +63,7 @@ Conventional Commits (см. `~/.claude/rules/git.md`):
 
 ## Версии
 
-При изменении поведения синхронно бампай `.claude-plugin/plugin.json` и
-`server/pyproject.toml` по SemVer.
+При изменении поведения синхронно бампай SemVer в **пяти** манифестах:
+`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
+`server/pyproject.toml`, `gemini-extension.json`, `.cursor-plugin/plugin.json`.
+Проверь `python3 scripts/check_versions.py` (exit 0 = синхронны).

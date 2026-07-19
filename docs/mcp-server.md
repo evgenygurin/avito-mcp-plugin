@@ -1,12 +1,18 @@
 # MCP-сервер
 
 Сервер `avito` — Python-пакет [`avito-mcp-server`](../server/README.md) на
-[FastMCP v3](https://gofastmcp.com). Несёт всю детерминированную логику: HTTP к
-Avito, парсинг, официальный API, работу с прокси.
+[FastMCP v3](https://gofastmcp.com). Несёт весь **движок парсинга**
+(полнофункциональный парсер каталога Avito): провайдеры кук и прокси,
+HTTP-клиент на `curl_cffi`, извлечение JSON со страницы, фильтры, хранилище в Postgres (Supabase),
+экспорт и уведомления.
 
-> **СТАТУС:** реализованы `ping`, клиент официального API и тулза
-> `official_api_call`, доменные модели и утилиты (26 тестов, ruff + mypy чисты).
-> Парсинг-тулзы — в разработке. Ниже — архитектура и конвенции.
+> **СТАТУС:** полный контекст дизайна — в
+> [спеке](superpowers/specs/2026-07-18-avito-parser-design.md). Все 7 тулз и модули
+> движка (`cookies/` `proxies/` `http/` `parser/` `filters/` `storage/`
+> `export/` `notifications/`) **реализованы**; работает раздача `skills/` по MCP
+> (`skills_provider.py`). Сетевую часть **живьём не проверить без чистого
+> RU-прокси**: с домашнего IP Avito отдаёт 403/429 после 2–3 запросов. Ниже —
+> архитектура и конвенции.
 
 ## Стек
 
@@ -27,13 +33,18 @@ class Listing(BaseModel):
     id: int
     title: str
     price: float | None
+    url: str | None
+    address: str | None
+    views: int | None = None          # только get_listing при with_views
 
 @mcp.tool
-async def get_listing(id_or_url: str, ctx: Context) -> Listing:
+async def get_listing(id_or_url: str, ctx: Context, with_views: bool = False) -> Listing:
     """Детали объявления по id или URL. Use when нужны поля одного объявления."""
     await ctx.info(f"fetch {id_or_url}")
-    ...  # гибридная схема: куки+прокси → m.avito.ru/api/*
-    return Listing(id=..., title=..., price=...)
+    # движок парсинга: провайдер кук → rotate-until-clean прокси
+    #   → curl_cffi (impersonate) + follow SSR-редиректа
+    #   → find_json_on_page → loaderData.data.catalog
+    return Listing(id=..., title=..., price=..., url=..., address=...)
 ```
 
 Конвенции:
@@ -49,35 +60,96 @@ async def get_listing(id_or_url: str, ctx: Context) -> Listing:
 
 ## Тулзы
 
-| Тулза | Назначение | Скил | Статус |
-|---|---|---|---|
-| `ping` | Диагностика связи | — | ✅ готово |
-| `official_api_call` | Официальный API (свои объявления) | `avito-official-api` | ✅ готово |
-| `search_listings` | Поиск объявлений по запросу/региону/фильтрам | `scraping-avito` | 🔜 план |
-| `get_listing` | Детали объявления | `scraping-avito` | 🔜 план |
-| `check_proxy_health` | Диагностика прокси-пула | `scraping-avito` | 🔜 план |
+7 тулз — полный фичесет парсинга Avito, все реализованы.
+
+| # | Тулза | Назначение | Статус |
+| --- | --- | --- | --- |
+| 1 | `search_listings` | Поиск каталога по URL с фильтрами; `pages` — обход страниц | ✅ готово |
+| 2 | `get_listing` | Детали одного объявления (`id_or_url`, `with_views`) | ✅ готово |
+| 3 | `scan_new_listings` | Dedup + отслеживание смены цены (мониторинг-примитив, Postgres) | ✅ готово |
+| 4 | `check_proxy_health` | Диагностика: проверяет каждый адрес пула (`probes`) | ✅ готово |
+| 5 | `send_notification` | Уведомление в Telegram/VK | ✅ готово |
+| 6 | `export_listings` | Экспорт объявлений в xlsx/json/csv | ✅ готово |
+| 7 | `get_price_history` | История цены объявления из Postgres | ✅ готово |
 
 Регистрация — через модули `server/src/avito_mcp_server/tools/*` с функцией
-`register(mcp)`; `server.py` вызывает их для каждой группы тулз.
+`register(mcp)`; `server.py` вызывает их для каждой группы тулз (по группе на модуль).
 
-Парсинг-тулзы требуют слоя обхода антибота (браузер + прокси) и **не**
-реализуют «лобовой» обход капчи — см. [`avito-legal.md`](avito-legal.md) и
-скил [`scraping-avito`](../skills/scraping-avito/SKILL.md).
+Фильтры (`include_keywords`, `exclude_keywords`, `seller_blacklist`,
+`price_min/max`, `geo`, `max_age`) и `pages` — это **параметры** тулз, а не
+отдельные тулзы: так набор держится глубоко под лимитом Anthropic «< 20 тулз».
+Тулза `parse_phone` **не портируется** — сбор телефонов продавцов (ПДн
+третьих лиц) исключён из фичесета. Возврат — Pydantic-модели (structured output),
+ошибки наружу — через `ToolError`. Движок парсинга описан в
+[§ Движок парсинга](#движок-парсинга-провайдеры) ниже и в скиле
+[`scraping-avito`](../skills/scraping-avito/SKILL.md).
+
+## Движок парсинга: провайдеры
+
+Внутренняя структура `server/src/avito_mcp_server/` включает модули:
+`cookies/` `proxies/` `http/` `export/` `notifications/` `filters/`
+`storage/` + `models.py` + `parser/` + `tools/`. Поток обработки одного запроса:
+
+```text
+провайдер кук → rotate-until-clean прокси → curl_cffi (impersonate)
+  → follow SSR-редиректа на канонический URL категории
+  → find_json_on_page (script[type=mime/invalid][data-mfe-state=true])
+  → loaderData.data.catalog.items → фильтры → модели Listing
+```
+
+### Куки (`AVITO_COOKIE_PROVIDER`, дефолт `spfa`)
+
+- `spfa` — `POST spfa.ru/api/cookies` + `/unblock` (валидировано живьём). Ключ
+  `SPFA_API_KEY`.
+- `own` — куки пользователя (`AVITO_OWN_COOKIES`).
+- `playwright` — браузерная добыча (куки `ft`), опционально, тяжёлая extra-зависимость.
+
+Единый интерфейс `CookiesProvider.get()/update()/handle_block()`.
+
+### Прокси (`AVITO_PROXY` + опц. `AVITO_PROXY_CHANGE_URL`)
+
+- `MobileProxy` (есть change-url → ротация) / `ServerProxy` (статик) / `NoProxy`.
+- Формат `user:pass@host:port`.
+
+### HTTP (`curl_cffi`)
+
+`impersonate` ∈ {chrome, edge, safari}, случайный UA, прокси, follow-редирект,
+`find_json_on_page`. **Наше улучшение retry-логики:** вместо одной ротации IP —
+**rotate-until-clean** (до `AVITO_MAX_ROTATE_ATTEMPTS`, дефолт 18); это чинит
+типичный дефект наивной retry-логики (одна ротация → сдача) на смешанном пуле.
+
+### Переменные окружения
+
+Сервер **не** читает `.env` (нет `load_dotenv`) — env передаёт шелл/агент.
+
+| Переменная | Назначение |
+| --- | --- |
+| `SPFA_API_KEY` | ключ spfa (провайдер кук) |
+| `AVITO_COOKIE_PROVIDER` | `spfa`\|`own`\|`playwright` (дефолт `spfa`) |
+| `AVITO_OWN_COOKIES` | куки для провайдера `own` |
+| `AVITO_PROXY` | `user:pass@host:port` |
+| `AVITO_PROXY_CHANGE_URL` | URL ротации IP (→ `MobileProxy`) |
+| `AVITO_TG_TOKEN`, `AVITO_TG_CHAT_IDS` | Telegram-уведомления |
+| `AVITO_VK_TOKEN`, `AVITO_VK_USER_IDS` | VK-уведомления |
+| `AVITO_SUPABASE_DSN` | DSN Postgres проекта Supabase (dedup + история цены + cooldown) |
+| `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций (дефолт 18) |
+| `AVITO_SKILLS_DIR`, `CLAUDE_PLUGIN_ROOT` | резолв каталога `skills/` |
 
 ## Тестирование (in-memory)
 
 ```python
-import pytest
 from fastmcp import Client
 from avito_mcp_server.server import mcp
 
-@pytest.mark.asyncio
-async def test_ping():
-    async with Client(mcp) as client:          # без сети/субпроцесса
-        res = await client.call_tool("ping", {"message": "hi"})
-        assert res.data.length == 2            # res.data — десериализованный объект
-        assert res.structured_content["length"] == 2   # dict-форма structured content
+async def test_get_listing():                    # asyncio_mode="auto" → без декоратора
+    async with Client(mcp) as client:            # без сети/субпроцесса
+        res = await client.call_tool("get_listing", {"id_or_url": "..."})
+        assert res.data.id == 123                # res.data — десериализованный объект (Listing)
+        assert res.structured_content["id"] == 123   # dict-форма structured content
 ```
+
+Сетевую границу движка (`curl_cffi`) мокай через подменяемый транспорт, HTML —
+из фикстур живой страницы; фабрики провайдеров подменяй `monkeypatch`.
 
 > Проверено на `fastmcp 3.4.4`: при возврате Pydantic-модели `res.data` —
 > объект (доступ через атрибут), а `res.structured_content` — dict.
@@ -113,6 +185,6 @@ skill-ресурсы — это дополнение к нативному skill
 
 ## Дальше
 
-- Техника парсинга (что реализуют тулзы) → [`avito-scraping.md`](avito-scraping.md)
-- Официальный API → [`avito-scraping.md`](avito-scraping.md) (§ Официальный API)
-- Правовые ограничения → [`avito-legal.md`](avito-legal.md)
+- Техника парсинга (движок, что реализуют тулзы) → [`avito-scraping.md`](avito-scraping.md)
+- Целевой дизайн парсера → [спека дизайна парсера](superpowers/specs/2026-07-18-avito-parser-design.md)
+- Список тулз для агента → скил [`using-avito-mcp`](../skills/using-avito-mcp/SKILL.md)

@@ -1,7 +1,7 @@
 {
   "name": "avito-mcp-plugin",
   "displayName": "Avito MCP Plugin",
-  "description": "Skills + встроенный MCP-сервер (FastMCP v3) для работы с Avito: официальный API, парсинг, правовые guardrails",
+  "description": "Skills + встроенный MCP-сервер (FastMCP v3) для парсинга и мониторинга Avito: поиск объявлений, отслеживание цен, уведомления",
   "version": "0.1.0",
   "author": {
     "name": "evgenygurin",

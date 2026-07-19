@@ -3,11 +3,12 @@
 MCP-сервер на [FastMCP v3](https://gofastmcp.com) для работы с Avito. Часть
 плагина [`avito-mcp-plugin`](../README.md).
 
-> **СТАТУС: ранняя разработка.** Реализованы: тулза `ping`, клиент официального
-> API и тулза `official_api_call`, доменные модели, утилиты, раздача `skills/`
-> по MCP (`SkillsProvider`) — 32 теста, ruff + mypy чисты. Парсинг-тулзы
-> (`search_listings`, `get_listing`) — в разработке
-> (см. [`../docs/mcp-server.md`](../docs/mcp-server.md)).
+> **СТАТУС: ранняя разработка.** Движок парсинга воспроизведён и валидирован
+> живьём (провайдер кук spfa → rotate-until-clean → curl_cffi + follow-редирект →
+> `find_json_on_page`); раздача `skills/` по MCP (`SkillsProvider`) работает.
+> **7 MCP-тулз** (`search_listings`, `get_listing`, `scan_new_listings`,
+> `check_proxy_health`, `send_notification`, `export_listings`, `get_price_history`)
+> — все в статусе **🔜 план** (см. [`../docs/mcp-server.md`](../docs/mcp-server.md)).
 
 ## Требования
 
@@ -55,12 +56,18 @@ server/
 ├── pyproject.toml                     # uv_build, fastmcp>=3, httpx, project.scripts
 ├── src/avito_mcp_server/
 │   ├── __init__.py
-│   ├── server.py                      # FastMCP инстанс + main(), регистрация тулз
-│   ├── models.py                      # доменные Pydantic-модели (Listing, SearchQuery, …)
-│   ├── utils.py                       # детерминированные утилиты (extract_listing_id)
-│   ├── official_api.py                # OAuth2-клиент официального API
+│   ├── server.py                      # FastMCP инстанс + main(), регистрация групп тулз
+│   ├── models.py                      # доменные Pydantic-модели (Listing, SearchResult)
+│   ├── parser/                        # ядро: state / mapping / pagination (фасад в __init__)
+│   ├── cookies/                       # провайдеры кук: spfa / own / playwright
+│   ├── proxies/                       # Mobile/Server/None + rotate-until-clean
+│   ├── http/                          # curl_cffi клиент (impersonate, retry)
+│   ├── export/                        # xlsx / json / csv
+│   ├── notifications/                 # Telegram, VK
+│   ├── filters/                       # keyword/seller/price/geo/max_age
+│   ├── storage/                       # Postgres (Supabase) через SQLAlchemy ORM
 │   ├── skills_provider.py             # раздача skills/ по MCP (SkillsProvider)
-│   └── tools/
-│       └── official_api.py            # тулза official_api_call (register(mcp))
-└── tests/                             # pytest: in-memory Client(mcp) + httpx.MockTransport
+│   └── tools/                         # тонкий MCP-слой (register(mcp) на группу):
+│                                      #   catalog.py, execution.py — общая часть тулз
+└── tests/                             # pytest: in-memory Client(mcp) + мок сетевой границы
 ```
