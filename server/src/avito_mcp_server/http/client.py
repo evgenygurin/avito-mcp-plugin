@@ -17,7 +17,7 @@ from curl_cffi import requests as cffi
 from curl_cffi.curl import CurlError
 
 from ..cookies.base import CookiesProvider
-from ..parser import PageKind, PageResult, classify
+from ..parser import PageKind, PageResult, classify, explain_status
 from ..proxies.proxy import Proxy
 from ..utils import to_absolute_avito_url
 
@@ -97,14 +97,18 @@ class HttpClient:
                     # под общий "нужен чистый RU-прокси".
                     raise
                 log.warning("транспортная ошибка (%s) — ротирую IP", exc)
-                blocks = self._rotate_and_backoff(attempt, limit, blocks)
+                blocks, rotated = self._rotate_and_backoff(attempt, limit, blocks)
+                if not rotated:
+                    break
                 continue
             log.info("ответ %s на попытке %s", resp.status_code, attempt)
             if self.cookies:
                 self.cookies.update(resp)
             if resp.status_code in self.block_codes:
                 log.warning("блокировка %s — ротирую IP", resp.status_code)
-                blocks = self._rotate_and_backoff(attempt, limit, blocks)
+                blocks, rotated = self._rotate_and_backoff(attempt, limit, blocks)
+                if not rotated:
+                    break
                 # Каждые 5 блокировок — принудительно обновить куки (могли протухнуть).
                 if blocks % 5 == 0 and self.cookies:
                     self.cookies.handle_block()
@@ -115,23 +119,31 @@ class HttpClient:
         # с одного IP, поэтому подсказка про AVITO_PROXY здесь ключевая.
         via = "прокси не задан" if self.proxy.httpx_proxy() is None else "через прокси"
         raise RuntimeError(
-            f"не удалось получить {url} за {limit} попыток "
+            f"не удалось получить {url} за {attempt} из {limit} попыток "
             f"(блокировки IP, {via}). Нужен чистый RU-прокси: "
             "задайте AVITO_PROXY и AVITO_PROXY_CHANGE_URL"
         )
 
-    def _rotate_and_backoff(self, attempt: int, limit: int, blocks: int) -> int:
+    def _rotate_and_backoff(
+        self, attempt: int, limit: int, blocks: int
+    ) -> tuple[int, bool]:
         """Сменить IP и выждать нарастающий backoff. Общий путь для кода-блокировки
         и транспортной ошибки — раньше был продублирован в обеих ветках ``get()``.
 
         Экспоненциальный backoff с потолком: первая блокировка часто случайна,
         а на десятой частые повторы только злят антибот. После последней
         попытки не спим — всё равно сдаёмся.
+
+        Возвращает ``(blocks, rotated)``. ``rotated=False`` — сменить выходной
+        IP нечем (``NoProxy``/``ServerProxy``, исчерпанный ``ProxyPool``,
+        отказавший кабинет мобильного прокси): повторять с того же адреса
+        бессмысленно, а полный бюджет попыток с backoff — это ~15 минут
+        ожидания заведомо той же блокировки. В этом случае не спим вовсе.
         """
-        self.proxy.rotate()
-        if attempt < limit:
+        rotated = self.proxy.rotate()
+        if rotated and attempt < limit:
             _sleep(min(self.wait_after_rotate * (2**blocks), self.backoff_cap))
-        return blocks + 1
+        return blocks + 1, rotated
 
 
 # Редирект-URL несёт одноразовый анти-бот токен (``context=``): если он не
@@ -147,6 +159,39 @@ def fetch_catalog(
     max_redirects: int = 3,
     max_token_refreshes: int = 3,
 ) -> PageResult:
+    """Забрать страницу каталога, следуя SSR-редиректу (см. :func:`_follow`)."""
+    kind, payload, _ = _follow(client, url, max_redirects, max_token_refreshes)
+    return kind, payload
+
+
+def fetch_page(
+    client: HttpClient,
+    url: str,
+    max_redirects: int = 3,
+    max_token_refreshes: int = 3,
+):  # noqa: ANN201 — тип ответа принадлежит curl_cffi
+    """Забрать произвольную страницу, следуя SSR-редиректу, и вернуть ответ.
+
+    Страница объявления классифицируется не как каталог (``catalog.items`` на
+    ней нет), поэтому ``fetch_catalog`` для неё не годится — но редирект на
+    канонический URL Avito делает и для карточки товара. Без хопа парсер
+    получает страницу-редирект и не находит объявление.
+
+    Raises:
+        RuntimeError: редирект-цепочка не сошлась (исчерпаны бюджеты).
+    """
+    kind, _, resp = _follow(client, url, max_redirects, max_token_refreshes)
+    if resp is None:
+        raise RuntimeError(explain_status(kind))
+    return resp
+
+
+def _follow(
+    client: HttpClient,
+    url: str,
+    max_redirects: int,
+    max_token_refreshes: int,
+) -> tuple[PageKind, Any, Any]:
     """Забрать страницу и следовать SSR-редиректу на канонический URL.
 
     Редирект-цель — одноразовый токен: если конкретный редирект-URL не
@@ -161,9 +206,9 @@ def fetch_catalog(
     чего второе освежение токена могло съесть весь бюджет и вернуть
     ``redirect_loop`` вместо ещё одной законной попытки.
 
-    Возвращает результат ``classify``: ``("ok", catalog)`` при успехе, либо
-    ``("softblock"|"nojson", None)``; ``("redirect_loop", None)`` при
-    исчерпании одного из бюджетов.
+    Возвращает ``(kind, payload, resp)`` — результат ``classify`` плюс сам
+    ответ (нужен вызывающим, которые разбирают HTML сами, а не каталог).
+    При исчерпании бюджета — ``(REDIRECT_LOOP, None, None)``.
     """
     origin_url = url
     current_url = url
@@ -181,7 +226,7 @@ def fetch_catalog(
                 raise
             refreshes_used += 1
             if refreshes_used > max_token_refreshes:
-                return PageKind.REDIRECT_LOOP, None
+                return PageKind.REDIRECT_LOOP, None, None
             log.warning(
                 "редирект-цель не пробилась за %s попыток — обновляю токен с "
                 "исходного URL",
@@ -200,8 +245,8 @@ def fetch_catalog(
         if kind == PageKind.REDIRECT:
             redirects_followed += 1
             if redirects_followed > max_redirects:
-                return PageKind.REDIRECT_LOOP, None
+                return PageKind.REDIRECT_LOOP, None, None
             current_url = to_absolute_avito_url(payload)
             on_redirect_hop = True
             continue
-        return kind, payload
+        return kind, payload, resp

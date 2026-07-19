@@ -358,3 +358,59 @@ def test_fetch_catalog_gives_up_with_redirect_loop(monkeypatch) -> None:
 
     assert (kind, payload) == (PageKind.REDIRECT_LOOP, None)
     assert len(hops) == 3, "исходный запрос + ровно max_redirects хопов"
+
+
+class _DeadEndProxy:
+    """Прокси, которому больше нечего ротировать (пул исчерпан / NoProxy)."""
+
+    def __init__(self) -> None:
+        self.rotations = 0
+
+    def httpx_proxy(self) -> str:
+        return "http://x"
+
+    def rotate(self) -> bool:
+        self.rotations += 1
+        return False
+
+
+def test_get_gives_up_when_rotation_is_impossible(monkeypatch) -> None:
+    # rotate() == False означает «сменить IP нечем»: повторять с того же
+    # адреса бессмысленно, а 18 попыток с backoff — это ~15 минут ожидания
+    # заведомо того же 403.
+    _FakeSession.seq = [_Resp(403)] * 18
+    waited: list[float] = []
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
+    monkeypatch.setattr(hc, "_sleep", waited.append)
+    proxy = _DeadEndProxy()
+    client = HttpClient(
+        proxy=proxy, cookies=None, max_attempts=18, wait_after_rotate=9.0
+    )
+
+    with pytest.raises(RuntimeError):
+        client.get("https://www.avito.ru/x")
+
+    assert proxy.rotations == 1, "одна попытка ротации — и сразу отказ"
+    assert waited == [], "спать после безнадёжной ротации нельзя"
+
+
+def test_fetch_page_follows_ssr_redirect(monkeypatch) -> None:
+    # Страница объявления тоже может прийти SSR-редиректом на канонический
+    # URL: без хопа парсер получит страницу-редирект и вернёт None.
+    from avito_mcp_server.parser import PageKind
+
+    hops: list[str] = []
+    pages = iter([(PageKind.REDIRECT, "/canonical"), (PageKind.NOJSON, None)])
+
+    class _Client:
+        def get(self, url: str, max_attempts: int | None = None):
+            hops.append(url)
+            return type("R", (), {"text": url})()
+
+    monkeypatch.setattr(hc, "classify", lambda text: next(pages))
+    resp = hc.fetch_page(_Client(), "https://www.avito.ru/items/1")
+
+    assert hops == ["https://www.avito.ru/items/1", "https://www.avito.ru/canonical"]
+    assert resp.text == "https://www.avito.ru/canonical"

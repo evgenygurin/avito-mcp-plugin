@@ -128,3 +128,20 @@ def test_proxy_list_url_failure_falls_back_to_env(monkeypatch) -> None:
 
     client = build_http_client()
     assert client.proxy.httpx_proxy() == "http://u:p@fallback:9"
+
+
+def test_default_rotate_attempts_bounds_worst_case(monkeypatch) -> None:
+    # Дефолт задаёт худшее время ответа тулзы: сумма backoff
+    # min(9*2^n, 60) по попыткам не должна уходить в четверть часа.
+    monkeypatch.delenv("AVITO_MAX_ROTATE_ATTEMPTS", raising=False)
+    monkeypatch.setenv("AVITO_COOKIE_PROVIDER", "none")
+    monkeypatch.delenv("AVITO_PROXY", raising=False)
+    monkeypatch.delenv("AVITO_PROXY_LIST_URL", raising=False)
+
+    client = build_http_client()
+
+    worst = sum(
+        min(client.wait_after_rotate * 2**n, client.backoff_cap)
+        for n in range(client.max_attempts - 1)
+    )
+    assert worst <= 150, f"худший случай {worst}с — тулза будет висеть"
