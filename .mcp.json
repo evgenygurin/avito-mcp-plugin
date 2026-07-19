@@ -9,10 +9,7 @@
     ],
     "env": {
       "LOG_LEVEL": "info",
-      "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv",
-      "SPFA_API_KEY": "${user_config.spfa_api_key}",
-      "AVITO_PROXY": "${user_config.avito_proxy}",
-      "AVITO_SUPABASE_DSN": "${user_config.avito_supabase_dsn}"
+      "UV_PROJECT_ENVIRONMENT": "${CLAUDE_PLUGIN_DATA}/venv"
     }
   }
 }
