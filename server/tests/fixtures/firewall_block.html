@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ru">
+<head><title>Доступ ограничен: проблема с IP</title></head>
+<body>
+<div class="firewall-container">
+  <h1 class="firewall-title">Доступ ограничен: проблема с IP</h1>
+  <p class="firewall-p-bold">
+    Иногда такое случается, чтобы вернуться на сайт нажмите на кнопку Продолжить
+    для решения капчи
+  </p>
+  <form class="js-firewall-form" method="post">
+    <input type="hidden" name="captcha-response" value="">
+    <button type="submit">Продолжить</button>
+  </form>
+  <script>window.__FIREWALL__ = {type: "firewallCaptcha", provider: "GEETEST_CAPTCHA"};</script>
+</div>
+</body>
+</html>

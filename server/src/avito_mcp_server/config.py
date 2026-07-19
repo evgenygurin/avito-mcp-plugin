@@ -6,11 +6,17 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from .cookies.factory import build_cookies_provider
 from .http.client import HttpClient
-from .proxies.factory import build_proxy
+from .proxies.factory import build_proxy, fetch_proxy_list
+from .storage.supabase import SupabaseStorage
+
+log = logging.getLogger(__name__)
 
 
 def _parse_own_cookies(raw: str | None) -> dict[str, str]:
@@ -36,14 +42,75 @@ def _parse_own_cookies(raw: str | None) -> dict[str, str]:
 
 def build_http_client() -> HttpClient:
     """Собрать `HttpClient` (провайдер кук + прокси) из окружения."""
+    proxy = build_proxy(
+        _proxy_setting(),
+        os.getenv("AVITO_PROXY_CHANGE_URL", ""),
+        cooldown_store=_optional_storage(),
+    )
     provider = build_cookies_provider(
         os.getenv("AVITO_COOKIE_PROVIDER", "spfa"),
         api_key=os.getenv("SPFA_API_KEY"),
         own_cookies=_parse_own_cookies(os.getenv("AVITO_OWN_COOKIES")),
-    )
-    proxy = build_proxy(
-        os.getenv("AVITO_PROXY", ""),
-        os.getenv("AVITO_PROXY_CHANGE_URL", ""),
+        proxy=proxy.httpx_proxy(),
     )
     max_attempts = int(os.getenv("AVITO_MAX_ROTATE_ATTEMPTS", "18"))
     return HttpClient(proxy=proxy, cookies=provider, max_attempts=max_attempts)
+
+
+def build_storage() -> SupabaseStorage:
+    """Собрать хранилище (Postgres проекта Supabase) из окружения.
+
+    Raises:
+        ValueError: если ``AVITO_SUPABASE_DSN`` не задан.
+    """
+    dsn = os.getenv("AVITO_SUPABASE_DSN", "").strip()
+    if not dsn:
+        raise ValueError(
+            "AVITO_SUPABASE_DSN не задан — хранилище необходимо для мониторинга "
+            "(Project Settings → Database → Connection string)"
+        )
+    return SupabaseStorage(dsn)
+
+
+def page_pause() -> float:
+    """Пауза между страницами каталога, сек (``AVITO_PAGE_PAUSE``, дефолт 1.0).
+
+    Многостраничный обход без паузы выжигает IP быстрее, чем успевает собрать
+    данные: Avito считает частоту запросов с адреса.
+    """
+    raw = os.getenv("AVITO_PAGE_PAUSE", "").strip()
+    try:
+        return float(raw) if raw else 1.0
+    except ValueError:
+        return 1.0
+
+
+def _optional_storage() -> SupabaseStorage | None:
+    """Хранилище для памяти о выжженных IP — только если БД уже настроена.
+
+    Без ``AVITO_SUPABASE_DSN`` пул обязан работать, просто без памяти между
+    запусками: ронять парсинг из-за отсутствия необязательной оптимизации нельзя.
+    """
+    if not os.getenv("AVITO_SUPABASE_DSN", "").strip():
+        return None
+    try:
+        return build_storage()
+    except (ValueError, SQLAlchemyError) as exc:
+        log.warning("память о блокировках прокси недоступна: %s", exc)
+        return None
+
+
+def _proxy_setting() -> str:
+    """Строка прокси: сперва список из кабинета, иначе то, что задано вручную.
+
+    ``AVITO_PROXY_LIST_URL`` избавляет от ведения списка портов в env; если
+    кабинет недоступен, падаем на ``AVITO_PROXY``, а не остаёмся без прокси.
+    """
+    list_url = os.getenv("AVITO_PROXY_LIST_URL", "").strip()
+    if list_url:
+        fetched = fetch_proxy_list(list_url)
+        if fetched:
+            log.info("получено %s прокси из кабинета", len(fetched))
+            return ",".join(fetched)
+        log.warning("кабинет не отдал прокси — использую AVITO_PROXY")
+    return os.getenv("AVITO_PROXY", "")

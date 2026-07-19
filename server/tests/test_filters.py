@@ -55,9 +55,11 @@ def test_geo_substring() -> None:
 
 
 def test_max_age_with_injected_now() -> None:
-    now = 1_000_000.0  # секунды
-    recent = int((now - 100) * 1000)  # 100 с назад, в миллисекундах
-    old = int((now - 100_000) * 1000)  # ~28 ч назад
+    # published_at приходит в epoch-СЕКУНДАХ: миллисекунды Avito приводит к ним
+    # parser._published_at, так что фильтр работает в одной шкале с `now`.
+    now = 1_000_000.0
+    recent = int(now - 100)  # 100 с назад
+    old = int(now - 100_000)  # ~28 ч назад
     items = [_l(1, published_at=recent), _l(2, published_at=old)]
     out = apply_filters(items, FilterSpec(max_age=3600), now=now)
     assert [i.id for i in out] == [1]

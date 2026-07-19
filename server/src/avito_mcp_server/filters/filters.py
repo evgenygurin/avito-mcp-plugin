@@ -55,7 +55,8 @@ def apply_filters(
         if spec.max_age is not None:
             if item.published_at is None:
                 continue
-            if current - item.published_at / 1000 > spec.max_age:
+            # published_at уже в секундах — нормализуется в parser._published_at.
+            if current - item.published_at > spec.max_age:
                 continue
 
         result.append(item)

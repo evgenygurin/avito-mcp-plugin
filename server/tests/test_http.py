@@ -57,8 +57,12 @@ def test_get_raises_after_max_attempts(monkeypatch) -> None:
     client = HttpClient(
         proxy=_FakeProxy(), cookies=None, max_attempts=3, wait_after_rotate=0
     )
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) as exc:
         client.get("https://www.avito.ru/x")
+
+    # Исчерпание попыток — самый частый провал; сообщение должно называть выход,
+    # иначе агент бесконечно ретраит с того же выжженного IP.
+    assert "AVITO_PROXY" in str(exc.value)
 
 
 def test_fetch_catalog_follows_redirect() -> None:
@@ -81,3 +85,55 @@ def test_fetch_catalog_follows_redirect() -> None:
     assert kind == "ok"
     assert isinstance(payload, dict) and payload.get("items")
     assert len(client.urls) == 2  # исходный + канонический после редиректа
+
+
+def test_backoff_grows_and_caps(monkeypatch) -> None:
+    # Фиксированные 9 с на каждую блокировку либо слишком долго на первой попытке,
+    # либо слишком агрессивно на десятой. Пауза должна расти и упираться в потолок.
+    _FakeSession.seq = [_Resp(403) for _ in range(10)]
+    waited: list[float] = []
+    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(hc, "_sleep", waited.append)
+
+    client = HttpClient(
+        proxy=_FakeProxy(),
+        cookies=None,
+        max_attempts=6,
+        wait_after_rotate=2.0,
+        backoff_cap=10.0,
+    )
+    with pytest.raises(RuntimeError):
+        client.get("https://www.avito.ru/x")
+
+    assert waited == [2.0, 4.0, 8.0, 10.0, 10.0]
+
+
+def test_backoff_disabled_when_wait_is_zero(monkeypatch) -> None:
+    _FakeSession.seq = [_Resp(403) for _ in range(5)]
+    waited: list[float] = []
+    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    monkeypatch.setattr(hc, "_sleep", waited.append)
+
+    client = HttpClient(
+        proxy=_FakeProxy(), cookies=None, max_attempts=3, wait_after_rotate=0
+    )
+    with pytest.raises(RuntimeError):
+        client.get("https://www.avito.ru/x")
+
+    assert waited == [0, 0]
+
+
+def test_impersonate_profiles_are_current() -> None:
+    # curl_cffi резолвит алиас "edge" в edge101 — отпечаток браузера 2022 года,
+    # заметный маркер для антибота. Оставляем только актуальные профили.
+    assert "edge" not in hc._IMPERSONATE
+    assert set(hc._IMPERSONATE) <= {"chrome", "safari"}
+
+
+def test_session_does_not_override_impersonated_user_agent() -> None:
+    # impersonate подставляет UA/Sec-Ch-Ua, согласованные с TLS-отпечатком.
+    # Ручной Windows-Chrome UA поверх случайного профиля даёт противоречие:
+    # заголовки говорят одно, отпечаток TLS — другое.
+    session = hc._build_session(None)
+    ua = {k.lower(): v for k, v in dict(session.headers).items()}.get("user-agent")
+    assert ua is None or "Windows NT 10.0" not in ua

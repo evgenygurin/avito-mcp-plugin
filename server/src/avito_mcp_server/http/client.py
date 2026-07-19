@@ -8,6 +8,7 @@ block-код (401/403/429), пока не попадёт на чистый и н
 
 from __future__ import annotations
 
+import logging
 import random
 import time
 from typing import Any, cast
@@ -18,8 +19,12 @@ from ..cookies.base import CookiesProvider
 from ..parser import classify
 from ..proxies.proxy import Proxy
 
-_IMPERSONATE = ("chrome", "edge", "safari")
+# Только алиасы, следующие за свежими версиями браузеров. "edge" исключён:
+# curl_cffi резолвит его в edge101 — отпечаток 2022 года, заметный антиботу.
+_IMPERSONATE = ("chrome", "safari")
 _BLOCK_CODES = (401, 403, 429)
+
+log = logging.getLogger(__name__)
 
 
 def _sleep(seconds: float) -> None:
@@ -28,17 +33,11 @@ def _sleep(seconds: float) -> None:
 
 def _build_session(proxy_url: str | None) -> Any:
     session: Any = cffi.Session(impersonate=cast(Any, random.choice(_IMPERSONATE)))
-    version = random.randint(142, 147)
-    session.headers.update(
-        {
-            "user-agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                f"Chrome/{version}.0.0.0 Safari/537.36"
-            ),
-            "accept-language": "ru-RU,ru;q=0.9",
-        }
-    )
+    # User-Agent НЕ переопределяем: impersonate уже выставил UA, Sec-Ch-Ua и
+    # платформу, согласованные с TLS-отпечатком профиля. Ручной Windows-Chrome
+    # UA поверх случайного профиля (включая safari) даёт противоречие, по
+    # которому антибот отличает автоматизацию от браузера.
+    session.headers.update({"accept-language": "ru-RU,ru;q=0.9"})
     if proxy_url:
         session.proxies = {"http": proxy_url, "https": proxy_url}
     return session
@@ -53,6 +52,7 @@ class HttpClient:
         wait_after_rotate: float = 9.0,
         timeout: float = 20.0,
         block_codes: tuple[int, ...] = _BLOCK_CODES,
+        backoff_cap: float = 60.0,
     ) -> None:
         self.proxy = proxy
         self.cookies = cookies
@@ -60,25 +60,44 @@ class HttpClient:
         self.wait_after_rotate = wait_after_rotate
         self.timeout = timeout
         self.block_codes = block_codes
+        self.backoff_cap = backoff_cap
 
     def get(self, url: str) -> Any:
         """GET с ротацией IP до чистого. Возвращает 200-ответ или бросает RuntimeError."""
         cookies = self.cookies.get() if self.cookies else None
-        for _ in range(self.max_attempts):
+        blocks = 0
+        for attempt in range(1, self.max_attempts + 1):
+            log.info("GET %s (попытка %s/%s)", url, attempt, self.max_attempts)
             with _build_session(self.proxy.httpx_proxy()) as session:
                 resp = session.get(
                     url, cookies=cookies, timeout=self.timeout, allow_redirects=True
                 )
+            log.info("ответ %s на попытке %s", resp.status_code, attempt)
             if self.cookies:
                 self.cookies.update(resp)
             if resp.status_code in self.block_codes:
+                log.warning("блокировка %s — ротирую IP", resp.status_code)
                 self.proxy.rotate()
-                _sleep(self.wait_after_rotate)
+                # Экспоненциальный backoff с потолком: первая блокировка часто
+                # случайна, а на десятой частые повторы только злят антибот.
+                # После последней попытки не спим — всё равно сдаёмся.
+                if attempt < self.max_attempts:
+                    delay = min(self.wait_after_rotate * (2**blocks), self.backoff_cap)
+                    _sleep(delay)
+                blocks += 1
+                # Каждые 5 блокировок — принудительно обновить куки (могли протухнуть).
+                if blocks % 5 == 0 and self.cookies:
+                    self.cookies.handle_block()
                 cookies = self.cookies.get() if self.cookies else None
                 continue
             return resp
+        # Без прокси менять нечего: NoProxy.rotate() — заглушка, все попытки идут
+        # с одного IP, поэтому подсказка про AVITO_PROXY здесь ключевая.
+        via = "прокси не задан" if self.proxy.httpx_proxy() is None else "через прокси"
         raise RuntimeError(
-            f"не удалось получить {url} за {self.max_attempts} попыток (блокировки IP)"
+            f"не удалось получить {url} за {self.max_attempts} попыток "
+            f"(блокировки IP, {via}). Нужен чистый RU-прокси: "
+            "задайте AVITO_PROXY и AVITO_PROXY_CHANGE_URL"
         )
 
 
