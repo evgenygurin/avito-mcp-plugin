@@ -222,6 +222,43 @@ def test_fetch_catalog_survives_multiple_token_refresh_cycles() -> None:
     assert len(client.calls) == 6
 
 
+def test_fetch_catalog_refresh_cycles_dont_exhaust_redirect_depth() -> None:
+    # Живой прогон 2026-07-20: redirects_followed инкрементировался на КАЖДОМ
+    # успешном получении исходного URL (он всегда классифицируется как
+    # "redirect" — так устроен SSR Avito), включая повторные обращения после
+    # освежения токена. За 3 полных цикла освежения (в пределах
+    # max_token_refreshes=3 по умолчанию) redirects_followed набегал до 4 и
+    # превышал max_redirects=3 — ложный redirect_loop без единого реального
+    # многошагового редиректа. Освежение токена должно возвращать глубину
+    # редирект-цепочки в исходное состояние: это не более глубокий хоп, а
+    # повтор того же самого первого хопа с новым токеном.
+    stub = (FIX / "redirect_stub.html").read_text(encoding="utf-8")
+    catalog = (FIX / "catalog.html").read_text(encoding="utf-8")
+
+    class _Client:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int | None]] = []
+
+        def get(self, url: str, max_attempts: int | None = None) -> _Resp:
+            self.calls.append((url, max_attempts))
+            # Редирект-хоп проваливается ТРИЖДЫ подряд (вызовы 2, 4, 6) —
+            # ровно max_token_refreshes циклов освежения по умолчанию,
+            # пробивается только на четвёртой попытке (вызов 8).
+            if len(self.calls) in (2, 4, 6):
+                raise RuntimeError("редирект-цель не пробилась за N попыток")
+            if len(self.calls) == 8:
+                return _Resp(200, catalog)
+            return _Resp(200, stub)
+
+    client = _Client()
+    kind, payload = fetch_catalog(
+        client, "https://www.avito.ru/nizhniy_novgorod/kvartiry/prodam"
+    )
+    assert kind == "ok"
+    assert isinstance(payload, dict) and payload.get("items")
+    assert len(client.calls) == 8
+
+
 def test_backoff_grows_and_caps(monkeypatch) -> None:
     # Фиксированные 9 с на каждую блокировку либо слишком долго на первой попытке,
     # либо слишком агрессивно на десятой. Пауза должна расти и упираться в потолок.

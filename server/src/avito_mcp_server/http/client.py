@@ -189,6 +189,12 @@ def fetch_catalog(
             )
             current_url = origin_url
             on_redirect_hop = False
+            # Освежение — это повтор ПЕРВОГО хопа с новым токеном, а не более
+            # глубокий шаг в редирект-цепочке: без сброса redirects_followed
+            # несколько циклов освежения (в пределах max_token_refreshes)
+            # исчерпывали max_redirects и давали ложный redirect_loop без
+            # единого реального многошагового редиректа.
+            redirects_followed = 0
             continue
         kind, payload = classify(resp.text)
         if kind == "redirect":
