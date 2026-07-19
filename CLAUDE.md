@@ -80,7 +80,10 @@ claude plugin validate ./ --strict  # ТОЛЬКО манифесты: marketpla
 ```
 
 Релиз/публикация (`uv build` / `uv publish` / тег) — [`docs/releasing.md`](docs/releasing.md).
-CI пока нет.
+CI — [`.github/workflows/ci.yml`](.github/workflows/ci.yml) на push в `main`/`dev` и на
+каждый PR: те же пять шагов (`ruff check`, `ruff format --check`, `mypy src`, `pytest`,
+`scripts/check_versions.py`). Без `AVITO_SUPABASE_DSN` тесты хранилища скипаются —
+воспроизвести локально: `env -u AVITO_SUPABASE_DSN uv run pytest -q`.
 
 ## Изменение MCP-сервера
 
@@ -120,7 +123,7 @@ avito_mcp_server/
   `asyncio.to_thread` + `try/except` в новой тулзе не пиши.
 - Статус страницы — `parser.PageKind` (`StrEnum`), а не строковый литерал; сравнения
   вида `kind == "ok"` продолжают работать, но ветвиться лучше по членам enum.
-- Расширяемые точки устроены реестрами, а не `if/elif`: `export._EXPORTERS`,
+- Расширяемые точки устроены реестрами, а не `if/elif`: `export.exporter._EXPORTERS`,
   `notifications.sender._NOTIFIERS`, `cookies.factory._PROVIDERS`,
   `filters.filters._CRITERIA`. Новый формат/канал/провайдер/критерий — запись в реестр.
 
