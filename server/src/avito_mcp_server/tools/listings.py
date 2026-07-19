@@ -19,6 +19,9 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+        # Один HTTP-запрос, но с тем же rotate-until-clean — тот же worst case
+        # ~900с, что и у search_listings/scan_new_listings (см. комментарий там).
+        timeout=900,
     )
     async def get_listing(
         id_or_url: str,

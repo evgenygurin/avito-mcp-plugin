@@ -33,6 +33,21 @@ async def test_tool_annotations_match_side_effects() -> None:
         assert annotations.destructiveHint is True, f"{name}: destructiveHint"
 
 
+async def test_network_tools_have_a_timeout() -> None:
+    # Context7-аудит: worst-case rotate-until-clean — до AVITO_MAX_ROTATE_ATTEMPTS
+    # (18) попыток с растущим backoff (до 60с потолка) НА СТРАНИЦУ, а
+    # asyncio.to_thread не отменяем сам по себе — зависший скрап неотличим от
+    # реального зависания сервера и жжёт proxy/spfa-бюджет впустую. Тулзовый
+    # timeout (anyio.fail_after — подтверждено в исходниках fastmcp 3.4.4)
+    # превращает это в ловимую ошибку клиента.
+    for name in ("search_listings", "scan_new_listings", "get_listing"):
+        tool = await mcp.get_tool(name)
+        assert tool.timeout is not None and tool.timeout > 0, name
+
+    proxy_tool = await mcp.get_tool("check_proxy_health")
+    assert proxy_tool.timeout is not None and proxy_tool.timeout > 0
+
+
 async def test_server_instantiates_and_serves_skills() -> None:
     async with Client(mcp) as client:
         names = {t.name for t in await client.list_tools()}

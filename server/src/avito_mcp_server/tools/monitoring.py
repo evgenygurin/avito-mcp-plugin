@@ -22,6 +22,8 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+        # См. аналогичный комментарий в tools/search.py — тот же движок обхода.
+        timeout=900,
     )
     async def scan_new_listings(
         url: str,

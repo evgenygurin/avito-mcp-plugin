@@ -27,6 +27,10 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+        # Каждый адрес пула проверяется max_attempts=1 (см. _run ниже) — не
+        # полный rotate-until-clean, но пул из десятков адресов всё же может
+        # набежать на сумму таймаутов; 180с — щедрый запас для типичного пула.
+        timeout=180,
     )
     async def check_proxy_health(
         ctx: Context,

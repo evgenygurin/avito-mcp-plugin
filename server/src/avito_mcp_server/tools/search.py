@@ -20,6 +20,14 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+        # Worst case на ОДНУ страницу — до AVITO_MAX_ROTATE_ATTEMPTS (18)
+        # попыток с растущим backoff (потолок 60с) — уже ~900с; asyncio.to_thread
+        # сам по себе не отменяем. Таймаут превращает зависший скрап в ловимую
+        # ошибку клиента вместо неотличимого от реального зависания сервера.
+        # При pages > 1 легитимный прогон на плохом пуле теоретически может
+        # упереться в потолок раньше естественного завершения — компромисс в
+        # пользу отменяемости, а не бесконечного ожидания.
+        timeout=900,
     )
     async def search_listings(
         url: str,
