@@ -14,7 +14,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any, NamedTuple
 
-from sqlalchemy import Engine, create_engine, delete, func, select
+from sqlalchemy import Engine, bindparam, create_engine, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -124,42 +124,57 @@ class SupabaseStorage:
 
         Объявления и точки истории идут одной транзакцией: иначе при сбое
         история разъедется с ``seen_items``.
+
+        Дедуп по id внутри батча — на случай дубля в одной странице каталога:
+        Postgres запрещает ``ON CONFLICT DO UPDATE`` дважды задевать одну
+        строку в пределах ОДНОГО multi-row ``VALUES`` (``CardinalityViolation``).
+        Поэтому это executemany — N отдельных однострочных upsert в одной
+        транзакции, а не один multi-row ``INSERT``: при дубле id внутри батча
+        побеждает последняя запись, а не падение всей транзакции. Сегодня
+        источник (``parser.walk_pages``) сам дедупит объявления по id, но
+        хранилище не должно зависеть от инварианта другого модуля.
         """
         if not rows:
             return
+        deduped: dict[int, SeenRow] = {row.id: row for row in rows}
+        stmt = (
+            insert(SeenItem)
+            .values(
+                id=bindparam("id"),
+                url=bindparam("url"),
+                title=bindparam("title"),
+                price=bindparam("price"),
+                first_seen=func.now(),
+                last_seen=func.now(),
+            )
+            .on_conflict_do_update(
+                index_elements=[SeenItem.id],
+                set_={
+                    "url": bindparam("url"),
+                    "title": bindparam("title"),
+                    "price": bindparam("price"),
+                    "last_seen": func.now(),
+                },
+            )
+        )
         with self._session() as session, session.begin():
-            stmt = insert(SeenItem).values(
+            session.execute(
+                stmt,
                 [
                     {
                         "id": row.id,
                         "url": row.url,
                         "title": row.title,
                         "price": row.price,
-                        "first_seen": func.now(),
-                        "last_seen": func.now(),
                     }
-                    for row in rows
-                ]
-            )
-            session.execute(
-                stmt.on_conflict_do_update(
-                    index_elements=[SeenItem.id],
-                    # excluded — значения из VALUES текущей строки: при пакетном
-                    # upsert у каждой строки они свои, поэтому литералы тут не
-                    # годятся (они бы записали всем одно и то же).
-                    set_={
-                        "url": stmt.excluded.url,
-                        "title": stmt.excluded.title,
-                        "price": stmt.excluded.price,
-                        "last_seen": func.now(),
-                    },
-                )
+                    for row in deduped.values()
+                ],
             )
             # Без цены точка истории бессмысленна.
             session.add_all(
                 [
                     PriceHistory(item_id=row.id, price=row.price)
-                    for row in rows
+                    for row in deduped.values()
                     if row.price is not None
                 ]
             )

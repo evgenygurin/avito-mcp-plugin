@@ -185,6 +185,22 @@ class TestAgainstPostgres:
         assert store.get_price_history(999000014) == []
         assert 999000014 in store.fetch_seen([999000014])
 
+    def test_upsert_seen_many_survives_duplicate_id_in_same_batch(
+        self, store: SupabaseStorage
+    ) -> None:
+        # Публичный метод сегодня корректен только потому, что дедуп живёт в
+        # parser.walk_pages — вызывающий, не гарантирующий уникальность id
+        # внутри одного батча, роняет ВСЮ транзакцию на
+        # "ON CONFLICT DO UPDATE command cannot affect row a second time".
+        # Хранилище не должно зависеть от инварианта другого модуля.
+        store.upsert_seen_many(
+            [
+                SeenRow(id=999000015, url="/x_15", title="старое", price=100.0),
+                SeenRow(id=999000015, url="/x_15", title="новое", price=90.0),
+            ]
+        )
+        assert store.fetch_seen([999000015]) == {999000015: 90.0}
+
     def test_upsert_seen_many_on_empty_input_is_noop(
         self, store: SupabaseStorage
     ) -> None:
