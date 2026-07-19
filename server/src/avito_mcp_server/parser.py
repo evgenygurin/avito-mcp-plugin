@@ -17,6 +17,7 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 from .models import Listing
+from .utils import to_absolute_avito_url
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ def next_page_url(catalog: dict[str, Any]) -> str | None:
     nxt = pager.get("next")
     if not nxt:
         return None
-    return f"https://www.avito.ru{nxt}" if str(nxt).startswith("/") else str(nxt)
+    return to_absolute_avito_url(str(nxt))
 
 
 def walk_pages(

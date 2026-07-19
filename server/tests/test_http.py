@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from curl_cffi.requests.exceptions import InvalidProxyURL as CffiInvalidProxyURL
 from curl_cffi.requests.exceptions import Timeout as CffiTimeout
 
 import avito_mcp_server.http.client as hc
@@ -79,6 +80,19 @@ def test_get_raises_after_max_attempts_on_persistent_transport_error(
     with pytest.raises(RuntimeError) as exc:
         client.get("https://www.avito.ru/x")
     assert "AVITO_PROXY" in str(exc.value)
+
+
+def test_get_reraises_configuration_errors_without_retry(monkeypatch) -> None:
+    # InvalidProxyURL/InvalidSchema и т.п. — битый конфиг (кривой AVITO_PROXY),
+    # не сетевая случайность. Ротация IP её не лечит, поэтому не тратим на
+    # неё попытки и не маскируем под общий "нужен чистый RU-прокси".
+    _FakeSession.seq = [CffiInvalidProxyURL("bad proxy url")]
+    monkeypatch.setattr(hc, "_build_session", lambda proxy_url: _FakeSession())
+    proxy = _FakeProxy()
+    client = HttpClient(proxy=proxy, cookies=None, max_attempts=5, wait_after_rotate=0)
+    with pytest.raises(CffiInvalidProxyURL):
+        client.get("https://www.avito.ru/x")
+    assert proxy.rotations == 0
 
 
 def test_get_raises_after_max_attempts(monkeypatch) -> None:

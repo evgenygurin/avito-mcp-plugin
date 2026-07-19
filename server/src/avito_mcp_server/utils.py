@@ -23,3 +23,17 @@ def extract_listing_id(value: str) -> int:
         return int(candidate)
 
     raise ValueError(f"не удалось извлечь id объявления из: {value!r}")
+
+
+def to_absolute_avito_url(location: str) -> str:
+    """Достроить относительный путь Avito (``/город/категория``) до полного URL.
+
+    Уже абсолютные URL (``http://``/``https://``) возвращаются без изменений —
+    Avito отдаёт и то, и другое в разных полях (``pager.next``, редирект
+    ``loaderData.data.url``), и вызывающему коду не нужно об этом думать.
+    """
+    return (
+        location
+        if location.startswith(("http://", "https://"))
+        else (f"https://www.avito.ru{location}")
+    )

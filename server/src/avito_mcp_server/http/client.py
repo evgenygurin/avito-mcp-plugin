@@ -19,6 +19,7 @@ from curl_cffi.curl import CurlError
 from ..cookies.base import CookiesProvider
 from ..parser import classify
 from ..proxies.proxy import Proxy
+from ..utils import to_absolute_avito_url
 
 # Только алиасы, следующие за свежими версиями браузеров. "edge" исключён:
 # curl_cffi резолвит его в edge101 — отпечаток 2022 года, заметный антиботу.
@@ -81,29 +82,21 @@ class HttpClient:
                         url, cookies=cookies, timeout=self.timeout, allow_redirects=True
                     )
             except CurlError as exc:
-                # Транспортная ошибка (таймаут, обрыв соединения) — не код
-                # блокировки, но так же лечится ротацией IP: свежий IP из пула
-                # часто просто быстрее/доступнее прежнего.
+                if isinstance(exc, ValueError):
+                    # Битый конфиг (невалидный AVITO_PROXY/схема URL) — не
+                    # сетевая случайность, ротация IP её не лечит. Отдаём
+                    # исходную ошибку сразу, а не тратим попытки/маскируем
+                    # под общий "нужен чистый RU-прокси".
+                    raise
                 log.warning("транспортная ошибка (%s) — ротирую IP", exc)
-                self.proxy.rotate()
-                if attempt < limit:
-                    delay = min(self.wait_after_rotate * (2**blocks), self.backoff_cap)
-                    _sleep(delay)
-                blocks += 1
+                blocks = self._rotate_and_backoff(attempt, limit, blocks)
                 continue
             log.info("ответ %s на попытке %s", resp.status_code, attempt)
             if self.cookies:
                 self.cookies.update(resp)
             if resp.status_code in self.block_codes:
                 log.warning("блокировка %s — ротирую IP", resp.status_code)
-                self.proxy.rotate()
-                # Экспоненциальный backoff с потолком: первая блокировка часто
-                # случайна, а на десятой частые повторы только злят антибот.
-                # После последней попытки не спим — всё равно сдаёмся.
-                if attempt < limit:
-                    delay = min(self.wait_after_rotate * (2**blocks), self.backoff_cap)
-                    _sleep(delay)
-                blocks += 1
+                blocks = self._rotate_and_backoff(attempt, limit, blocks)
                 # Каждые 5 блокировок — принудительно обновить куки (могли протухнуть).
                 if blocks % 5 == 0 and self.cookies:
                     self.cookies.handle_block()
@@ -118,6 +111,19 @@ class HttpClient:
             f"(блокировки IP, {via}). Нужен чистый RU-прокси: "
             "задайте AVITO_PROXY и AVITO_PROXY_CHANGE_URL"
         )
+
+    def _rotate_and_backoff(self, attempt: int, limit: int, blocks: int) -> int:
+        """Сменить IP и выждать нарастающий backoff. Общий путь для кода-блокировки
+        и транспортной ошибки — раньше был продублирован в обеих ветках ``get()``.
+
+        Экспоненциальный backoff с потолком: первая блокировка часто случайна,
+        а на десятой частые повторы только злят антибот. После последней
+        попытки не спим — всё равно сдаёмся.
+        """
+        self.proxy.rotate()
+        if attempt < limit:
+            _sleep(min(self.wait_after_rotate * (2**blocks), self.backoff_cap))
+        return blocks + 1
 
 
 # Редирект-URL несёт одноразовый анти-бот токен (``context=``): если он не
@@ -162,11 +168,7 @@ def fetch_catalog(
             continue
         kind, payload = classify(resp.text)
         if kind == "redirect":
-            current_url = (
-                payload
-                if payload.startswith("http")
-                else f"https://www.avito.ru{payload}"
-            )
+            current_url = to_absolute_avito_url(payload)
             on_redirect_hop = True
             continue
         return kind, payload

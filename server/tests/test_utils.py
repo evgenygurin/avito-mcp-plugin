@@ -2,7 +2,7 @@
 
 import pytest
 
-from avito_mcp_server.utils import extract_listing_id
+from avito_mcp_server.utils import extract_listing_id, to_absolute_avito_url
 
 
 class TestExtractListingId:
@@ -28,3 +28,19 @@ class TestExtractListingId:
     def test_raises_on_empty_string(self) -> None:
         with pytest.raises(ValueError):
             extract_listing_id("")
+
+
+class TestToAbsoluteAvitoUrl:
+    def test_prefixes_relative_path_with_domain(self) -> None:
+        assert (
+            to_absolute_avito_url("/moskva/telefony?p=2")
+            == "https://www.avito.ru/moskva/telefony?p=2"
+        )
+
+    def test_leaves_absolute_url_untouched(self) -> None:
+        url = "https://www.avito.ru/moskva/telefony-ASgBAg?localPriority=0"
+        assert to_absolute_avito_url(url) == url
+
+    def test_leaves_other_scheme_untouched(self) -> None:
+        # На случай нестандартных редиректов — не подменяем произвольный http(s) URL.
+        assert to_absolute_avito_url("http://example.com/x") == "http://example.com/x"
