@@ -16,6 +16,12 @@ log = logging.getLogger(__name__)
 class Proxy(ABC):
     """Прокси для запросов к Avito. `rotate()` меняет выходной IP, если умеет."""
 
+    #: Была ли последняя ротация мгновенной (смена звена цепочки, а не запрос в
+    #: кабинет провайдера). Мгновенная смена уже даёт другой выходной адрес,
+    #: поэтому пауза «чтобы прежний IP остыл» после неё не нужна — см.
+    #: ``HttpClient._rotate_and_backoff``.
+    rotation_was_instant: bool = False
+
     @abstractmethod
     def httpx_proxy(self) -> str | None:
         """Строка прокси для HTTP-клиента (`http://user:pass@host:port`) или None."""
@@ -156,3 +162,52 @@ class ProxyPool(Proxy):
         self._rotations += 1
         self._skip_cooled_down()
         return self._rotations % len(self.urls) != 0
+
+
+class ChainProxy(Proxy):
+    """Упорядоченная цепочка транспортов: сначала быстрые, потом дорогие.
+
+    Замер 2026-07-20 на живом Avito: прямое соединение с куками spfa отдаёт
+    каталог за 0.63 с, а купленная мобильная подсеть — 403 на любом выходном
+    адресе и с любым отпечатком. Qrator банит подсеть целиком, поэтому ротация
+    IP внутри неё меняет адрес, но не репутацию. Клиент, знающий только про
+    прокси, честно выбирал весь бюджет времени на заведомо мёртвых попытках.
+
+    Отсюда порядок: ``[NoProxy(), <прокси>]`` — пробуем напрямую, а прокси
+    держим как фоллбэк на случай, когда забанен уже наш собственный IP.
+
+    Смена звена мгновенна и бесплатна (это сразу другой выходной адрес), тогда
+    как ротация IP внутри звена — сетевой запрос в кабинет провайдера на
+    3.6–4.3 с. Поэтому сначала перебираются звенья и только после — ротируется
+    последнее из них; ``rotation_was_instant`` сообщает вызывающему, нужен ли
+    backoff.
+    """
+
+    def __init__(self, links: list[Proxy]) -> None:
+        if not links:
+            raise ValueError("цепочка транспортов пуста")
+        self.links = links
+        self._index = 0
+
+    def _current(self) -> Proxy:
+        return self.links[self._index]
+
+    def httpx_proxy(self) -> str | None:
+        return self._current().httpx_proxy()
+
+    def rotate(self) -> bool:
+        if self._index + 1 < len(self.links):
+            self._index += 1
+            self.rotation_was_instant = True
+            log.info(
+                "переключаюсь на следующий транспорт: %s",
+                mask_proxy(self.httpx_proxy() or "") or "прямое соединение",
+            )
+            return True
+        # Звенья кончились — остаётся дорогая смена IP внутри последнего.
+        self.rotation_was_instant = False
+        return self.links[-1].rotate()
+
+    def escalate(self) -> bool:
+        """Эскалация касается только последнего звена — у прямого её нет."""
+        return self.links[-1].escalate()

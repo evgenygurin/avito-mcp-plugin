@@ -108,8 +108,10 @@ def test_no_cookie_refresh_after_the_last_attempt(monkeypatch) -> None:
     except RuntimeError:
         pass
 
-    # Покупка на старте + обновление перед КАЖДОЙ следующей попыткой (2..5) —
+    # Покупка на старте + чтение перед КАЖДОЙ следующей попыткой (2..5) —
     # законно. Обновления ПОСЛЕ последней (пятой) попытки, для которой уже
     # нет следующего раунда, быть не должно.
     assert cookies.get_calls == 1 + 4
-    assert cookies.handle_block_calls == 0
+    # Принудительное обновление — на 2-й и 4-й блокировке (_COOKIE_REFRESH_EVERY),
+    # то есть перед реальными попытками; пятая блокировка его не запускает.
+    assert cookies.handle_block_calls == 2

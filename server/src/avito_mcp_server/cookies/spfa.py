@@ -20,6 +20,11 @@ from .base import CookiesProvider
 API_URL = "https://spfa.ru/api"
 # Сервис держит куки рабочими ~12 часов; после этого кэш заведомо мёртв.
 CACHE_TTL = 12 * 3600
+#: Минимальный интервал между покупками, сек. Живой прогон 2026-07-20: девять
+#: обновлений за 47 с довели до ``429 Too Many Requests`` от самого spfa, после
+#: чего парсинг вставал совсем. Плюс каждая покупка стоит денег — частить ими
+#: невыгодно и бессмысленно: куки, купленные секунду назад, ещё не «протухли».
+MIN_BUY_INTERVAL = 30.0
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +41,7 @@ class SpfaCookiesProvider(CookiesProvider):
         self.cache_path = cache_path
         self.last_id: str | None = None
         self.last_cookies: dict | None = None
+        self._last_buy = 0.0
         self._load_cache()
         self._headers = {
             "Accept": "application/json",
@@ -47,7 +53,7 @@ class SpfaCookiesProvider(CookiesProvider):
             return self.last_cookies
         return self._buy()
 
-    def handle_block(self) -> None:
+    def handle_block(self) -> bool:
         if self.last_id:
             try:
                 resp = httpx.post(
@@ -58,18 +64,35 @@ class SpfaCookiesProvider(CookiesProvider):
                     trust_env=False,
                 )
                 if resp.status_code in (200, 202):
-                    return
+                    return True
             except httpx.HTTPError:
                 pass
-        # Разблокировать не удалось — покупаем свежие куки.
+        # Разблокировать не удалось — покупаем свежие куки, если можно.
+        if not self._may_buy():
+            log.info("покупка кук отложена (троттлинг) — лечить нечем")
+            return False
+        previous = self.last_cookies
         self.last_id = None
         self.last_cookies = None
         self._drop_cache()
-        self._buy()
+        try:
+            self._buy()
+        except (httpx.HTTPError, RuntimeError) as exc:
+            # Провайдер кук отказал (в т.ч. своим 429) — это не повод терять
+            # весь вызов: пробуем дальше с тем, что было на руках.
+            log.warning("не удалось обновить куки (%s) — остаюсь на прежних", exc)
+            self.last_cookies = previous
+            return False
+        return True
+
+    def _may_buy(self) -> bool:
+        """Прошло ли достаточно времени с прошлой покупки (см. MIN_BUY_INTERVAL)."""
+        return time.time() - self._last_buy >= MIN_BUY_INTERVAL
 
     def _buy(self) -> dict:
         # Покупка кук — платный внешний вызов на несколько секунд: в сводке
         # он должен быть отделим от собственно запросов к Avito.
+        self._last_buy = time.time()
         with timed("cookies.buy", logger=log):
             resp = httpx.post(
                 f"{API_URL}/cookies/",

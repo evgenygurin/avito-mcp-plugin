@@ -68,7 +68,7 @@ def _run(monkeypatch, proxy, **kwargs) -> list[float]:
 
 
 def test_rotation_time_counts_towards_the_pause(monkeypatch) -> None:
-    _FakeSession.seq = [_Resp(403) for _ in range(10)]
+    _FakeSession.seq = [_Resp(429) for _ in range(10)]
     proxy = _SlowRotatingProxy(rotate_cost=4.0)
 
     waited = _run(
@@ -81,7 +81,7 @@ def test_rotation_time_counts_towards_the_pause(monkeypatch) -> None:
 
 
 def test_pause_never_goes_negative(monkeypatch) -> None:
-    _FakeSession.seq = [_Resp(403) for _ in range(10)]
+    _FakeSession.seq = [_Resp(429) for _ in range(10)]
     proxy = _SlowRotatingProxy(rotate_cost=30.0)
 
     waited = _run(

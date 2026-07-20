@@ -198,6 +198,9 @@ def test_spfa_drops_cache_on_block(monkeypatch, tmp_path) -> None:
         return _Resp(200, {"results": {"id": "2", "cookies": {"ft": "b"}}})
 
     monkeypatch.setattr(spfa_mod.httpx, "post", fake_post)
+    # Покупки троттлятся (см. test_cookies_spfa_throttle) — здесь проверяется
+    # сама замена кук, поэтому интервал сдвигаем в прошлое.
+    p._last_buy = 0.0
     p.handle_block()
 
     assert p.get() == {"ft": "b"}

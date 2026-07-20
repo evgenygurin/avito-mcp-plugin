@@ -6,7 +6,16 @@ import avito_mcp_server.config as config_mod
 from avito_mcp_server.config import build_http_client, build_storage, page_pause
 from avito_mcp_server.cookies.own import OwnCookiesProvider
 from avito_mcp_server.cookies.spfa import SpfaCookiesProvider
-from avito_mcp_server.proxies.proxy import MobileProxy, NoProxy, ProxyPool
+from avito_mcp_server.proxies.proxy import ChainProxy, MobileProxy, NoProxy, ProxyPool
+
+
+def configured(proxy):
+    """Настроенный прокси без ведущего прямого звена цепочки.
+
+    build_http_client() по умолчанию ставит прямое соединение первым
+    (AVITO_DIRECT_FIRST) — тестам конфигурации нужно то звено, что описано env.
+    """
+    return proxy.links[-1] if isinstance(proxy, ChainProxy) else proxy
 
 
 def test_own_provider_and_mobile_proxy(monkeypatch) -> None:
@@ -19,7 +28,7 @@ def test_own_provider_and_mobile_proxy(monkeypatch) -> None:
     client = build_http_client()
     assert isinstance(client.cookies, OwnCookiesProvider)
     assert client.cookies.get() == {"ft": "x"}
-    assert isinstance(client.proxy, MobileProxy)
+    assert isinstance(configured(client.proxy), MobileProxy)
     assert client.max_attempts == 5
 
 
@@ -88,8 +97,8 @@ def test_http_client_gets_cooldown_store_when_db_configured(monkeypatch) -> None
     monkeypatch.setenv("AVITO_COOKIE_PROVIDER", "none")
 
     client = build_http_client()
-    assert isinstance(client.proxy, ProxyPool)
-    assert client.proxy.cooldown_store is not None
+    assert isinstance(configured(client.proxy), ProxyPool)
+    assert configured(client.proxy).cooldown_store is not None
 
 
 def test_http_client_works_without_db(monkeypatch) -> None:
@@ -99,8 +108,8 @@ def test_http_client_works_without_db(monkeypatch) -> None:
     monkeypatch.setenv("AVITO_COOKIE_PROVIDER", "none")
 
     client = build_http_client()
-    assert isinstance(client.proxy, ProxyPool)
-    assert client.proxy.cooldown_store is None
+    assert isinstance(configured(client.proxy), ProxyPool)
+    assert configured(client.proxy).cooldown_store is None
 
 
 def test_proxy_list_url_feeds_the_pool(monkeypatch) -> None:
@@ -114,8 +123,8 @@ def test_proxy_list_url_feeds_the_pool(monkeypatch) -> None:
     )
 
     client = build_http_client()
-    assert isinstance(client.proxy, ProxyPool)
-    assert client.proxy.urls == ["u:p@h1:1", "u:p@h2:2"]
+    assert isinstance(configured(client.proxy), ProxyPool)
+    assert configured(client.proxy).urls == ["u:p@h1:1", "u:p@h2:2"]
 
 
 def test_proxy_list_url_failure_falls_back_to_env(monkeypatch) -> None:
@@ -127,21 +136,25 @@ def test_proxy_list_url_failure_falls_back_to_env(monkeypatch) -> None:
     monkeypatch.setattr(config_mod, "fetch_proxy_list", lambda url: [])
 
     client = build_http_client()
-    assert client.proxy.httpx_proxy() == "http://u:p@fallback:9"
+    assert configured(client.proxy).httpx_proxy() == "http://u:p@fallback:9"
 
 
-def test_default_rotate_attempts_bounds_worst_case(monkeypatch) -> None:
-    # Дефолт задаёт худшее время ответа тулзы: сумма backoff
-    # min(9*2^n, 60) по попыткам не должна уходить в четверть часа.
+def test_worst_case_is_bounded_by_the_budget_not_by_attempts(monkeypatch) -> None:
+    # Раньше худшее время ответа задавалось суммой backoff по попыткам, и
+    # лимит попыток приходилось держать низким, чтобы тулза не висела. Теперь
+    # пауза положена только rate-limit'у (см. test_http_backoff_only_rate_limit),
+    # а верхнюю границу держит бюджет времени — поэтому перебирать комбинаций
+    # можно больше, не рискуя зависанием.
     monkeypatch.delenv("AVITO_MAX_ROTATE_ATTEMPTS", raising=False)
+    monkeypatch.delenv("AVITO_REQUEST_BUDGET", raising=False)
     monkeypatch.setenv("AVITO_COOKIE_PROVIDER", "none")
     monkeypatch.delenv("AVITO_PROXY", raising=False)
     monkeypatch.delenv("AVITO_PROXY_LIST_URL", raising=False)
 
     client = build_http_client()
 
-    worst = sum(
-        min(client.wait_after_rotate * 2**n, client.backoff_cap)
-        for n in range(client.max_attempts - 1)
-    )
-    assert worst <= 150, f"худший случай {worst}с — тулза будет висеть"
+    assert client.budget is not None, "без бюджета зависание ничем не ограничено"
+    assert client.budget <= 300
+    # Перебор должен быть достаточно широким: чистый IP ищется именно им, и
+    # живой прогон упирался в лимит попыток, а не в бюджет.
+    assert client.max_attempts >= 10
