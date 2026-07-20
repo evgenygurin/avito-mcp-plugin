@@ -69,3 +69,47 @@ def test_rotation_still_happens_between_attempts(monkeypatch) -> None:
 
     assert client.get("https://www.avito.ru/x").status_code == 200
     assert proxy.rotations == 1
+
+
+class _CookiesSpy:
+    """Считает вызовы, чтобы поймать «обновление кук под несуществующую попытку»."""
+
+    def __init__(self) -> None:
+        self.get_calls = 0
+        self.handle_block_calls = 0
+
+    def get(self) -> dict:
+        self.get_calls += 1
+        return {}
+
+    def update(self, resp) -> None:  # noqa: ANN001
+        pass
+
+    def handle_block(self) -> None:
+        self.handle_block_calls += 1
+
+
+def test_no_cookie_refresh_after_the_last_attempt(monkeypatch) -> None:
+    # max_attempts=5 — реальный дефолт: полный прогоревший круг даёт blocks=5
+    # на последней попытке, и blocks % 5 == 0 раньше запускал платный вызов
+    # spfa /unblock/ прямо в момент сдачи, когда следующей попытки уже не будет.
+    _FakeSession.seq = [_Resp(403) for _ in range(5)]
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
+    proxy = _CountingProxy()
+    cookies = _CookiesSpy()
+    client = HttpClient(
+        proxy=proxy, cookies=cookies, max_attempts=5, wait_after_rotate=0
+    )
+
+    try:
+        client.get("https://www.avito.ru/x")
+    except RuntimeError:
+        pass
+
+    # Покупка на старте + обновление перед КАЖДОЙ следующей попыткой (2..5) —
+    # законно. Обновления ПОСЛЕ последней (пятой) попытки, для которой уже
+    # нет следующего раунда, быть не должно.
+    assert cookies.get_calls == 1 + 4
+    assert cookies.handle_block_calls == 0

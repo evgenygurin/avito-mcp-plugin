@@ -231,6 +231,11 @@ class HttpClient:
                 blocks, rotated = self._rotate_and_backoff(attempt, limit, blocks)
                 if not rotated:
                     break
+                if attempt >= limit:
+                    # Круг и так закончен (см. _rotate_and_backoff) — обновлять
+                    # куки под несуществующую следующую попытку незачем. Для
+                    # spfa это платный вызов, а не бесплатный кэш-промах.
+                    break
                 # Каждые 5 блокировок — принудительно обновить куки (могли протухнуть).
                 if blocks % 5 == 0 and self.cookies:
                     self.cookies.handle_block()
