@@ -12,6 +12,8 @@ class OwnCookiesProvider(CookiesProvider):
     def get(self) -> dict:
         return self._cookies
 
-    def handle_block(self) -> None:
-        # Свои куки автоматически не обновляемы — блок разруливается ротацией IP.
-        return
+    def handle_block(self) -> bool:
+        # Свои куки автоматически не обновляемы — блок разруливается сменой
+        # адреса, и сообщить об этом надо честно: иначе клиент потратит
+        # попытку на повтор с теми же куками.
+        return False

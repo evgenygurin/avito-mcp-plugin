@@ -253,11 +253,17 @@ class HttpClient:
                 # (см. test_http_recovery_ladder). Раньше дорогое средство шло
                 # на КАЖДУЮ блокировку: profile дал proxy.rotate=96.9s×19 при
                 # 19.9 с полезной работы.
+                healed = False
                 if blocks % _COOKIE_REFRESH_EVERY != 0 and self.cookies:
                     log.warning("блокировка %s — обновляю куки", resp.status_code)
                     with timed("cookies.refresh", logger=log):
-                        self.cookies.handle_block()
-                else:
+                        healed = self.cookies.handle_block()
+                    if not healed:
+                        # Лечить куки нечем (провайдер `own`, троттлинг spfa) —
+                        # повтор с теми же куками и тем же адресом ушёл бы в тот
+                        # же 403, просто за счёт бюджета.
+                        log.info("куки обновить не удалось — меняю выходной адрес")
+                if not healed:
                     log.warning(
                         "блокировка %s — меняю выходной адрес", resp.status_code
                     )

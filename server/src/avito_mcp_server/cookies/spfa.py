@@ -53,7 +53,7 @@ class SpfaCookiesProvider(CookiesProvider):
             return self.last_cookies
         return self._buy()
 
-    def handle_block(self) -> None:
+    def handle_block(self) -> bool:
         if self.last_id:
             try:
                 resp = httpx.post(
@@ -64,13 +64,13 @@ class SpfaCookiesProvider(CookiesProvider):
                     trust_env=False,
                 )
                 if resp.status_code in (200, 202):
-                    return
+                    return True
             except httpx.HTTPError:
                 pass
         # Разблокировать не удалось — покупаем свежие куки, если можно.
         if not self._may_buy():
-            log.info("покупка кук отложена (троттлинг) — работаю на текущих")
-            return
+            log.info("покупка кук отложена (троттлинг) — лечить нечем")
+            return False
         previous = self.last_cookies
         self.last_id = None
         self.last_cookies = None
@@ -82,6 +82,8 @@ class SpfaCookiesProvider(CookiesProvider):
             # весь вызов: пробуем дальше с тем, что было на руках.
             log.warning("не удалось обновить куки (%s) — остаюсь на прежних", exc)
             self.last_cookies = previous
+            return False
+        return True
 
     def _may_buy(self) -> bool:
         """Прошло ли достаточно времени с прошлой покупки (см. MIN_BUY_INTERVAL)."""

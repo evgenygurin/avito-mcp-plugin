@@ -61,8 +61,11 @@ class _CountingCookies:
     def update(self, resp) -> None:  # noqa: ANN001
         pass
 
-    def handle_block(self) -> None:
+    def handle_block(self) -> bool:
         self.refreshes += 1
+        # Лечение состоялось — иначе клиент законно уйдёт менять адрес
+        # (см. test_http_no_wasted_attempts).
+        return True
 
 
 def _run(monkeypatch, attempts: int):

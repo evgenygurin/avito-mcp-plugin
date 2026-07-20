@@ -76,9 +76,10 @@ class PlaywrightCookiesProvider(CookiesProvider):
             return self._cookies
         return self._harvest()
 
-    def handle_block(self) -> None:
+    def handle_block(self) -> bool:
         self._cookies = None
         self._harvest()
+        return True
 
     def _harvest(self) -> dict:
         launch_kwargs: dict[str, Any] = {"headless": self._headless}
