@@ -80,6 +80,10 @@ class HttpClient:
         limit = max_attempts if max_attempts is not None else self.max_attempts
         cookies = self.cookies.get() if self.cookies else None
         blocks = 0
+        # Читается после цикла в сообщении об отказе: limit <= 0 (законное
+        # "не ротировать" из env) не должен давать UnboundLocalError вместо
+        # контрактного RuntimeError.
+        attempt = 0
         for attempt in range(1, limit + 1):
             log.info("GET %s (попытка %s/%s)", url, attempt, limit)
             try:
@@ -97,9 +101,11 @@ class HttpClient:
                     # под общий "нужен чистый RU-прокси".
                     raise
                 log.warning("транспортная ошибка (%s) — ротирую IP", exc)
-                blocks, rotated = self._rotate_and_backoff(attempt, limit, blocks)
-                if not rotated:
-                    break
+                # Здесь, в отличие от блокировки, цикл НЕ обрывается при
+                # rotated=False: таймаут/обрыв TCP лечится повтором, а не
+                # сменой IP, и без прокси (rotate() всегда False) отказ с
+                # первой же сетевой случайности был бы регрессией.
+                blocks, _ = self._rotate_and_backoff(attempt, limit, blocks)
                 continue
             log.info("ответ %s на попытке %s", resp.status_code, attempt)
             if self.cookies:

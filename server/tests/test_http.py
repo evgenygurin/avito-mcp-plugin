@@ -414,3 +414,30 @@ def test_fetch_page_follows_ssr_redirect(monkeypatch) -> None:
 
     assert hops == ["https://www.avito.ru/items/1", "https://www.avito.ru/canonical"]
     assert resp.text == "https://www.avito.ru/canonical"
+
+
+def test_get_raises_contract_error_when_attempts_disabled(monkeypatch) -> None:
+    # AVITO_MAX_ROTATE_ATTEMPTS=0 — законный способ «не ротировать»: наружу
+    # должен уйти контрактный RuntimeError, а не UnboundLocalError.
+    _FakeSession.seq = []
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
+    client = HttpClient(proxy=_FakeProxy(), cookies=None, max_attempts=0)
+
+    with pytest.raises(RuntimeError, match="за 0 из 0 попыток"):
+        client.get("https://www.avito.ru/x")
+
+
+def test_transport_errors_retry_even_without_rotation(monkeypatch) -> None:
+    # Таймаут — не блокировка: он лечится повтором, а не сменой IP. Без
+    # прокси (rotate() всегда False) обрывать на первой ошибке нельзя.
+    _FakeSession.seq = [CffiTimeout("timeout"), _Resp(200, "<html>ok</html>")]
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
+    client = HttpClient(
+        proxy=_DeadEndProxy(), cookies=None, max_attempts=3, wait_after_rotate=0
+    )
+
+    assert client.get("https://www.avito.ru/x").status_code == 200
