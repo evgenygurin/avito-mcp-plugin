@@ -24,6 +24,16 @@ class Proxy(ABC):
     def rotate(self) -> bool:
         """Сменить выходной IP. True — успех; False — не поддерживается/не удалось."""
 
+    def escalate(self) -> bool:
+        """Более тяжёлая мера, чем `rotate()`, если поддерживается.
+
+        `rotate()` меняет IP в пределах той же физической точки/подсети — не
+        спасает, если под подозрением Qrator вся подсеть (см. `MpsApiProxy`,
+        который переключает регион/оператора через API mobileproxy.space).
+        По умолчанию не поддерживается.
+        """
+        return False
+
 
 class NoProxy(Proxy):
     def httpx_proxy(self) -> str | None:

@@ -7,24 +7,37 @@ import logging
 import httpx
 
 from ..storage.base import ProxyCooldownStore
+from .mpsapi import MpsApiProxy
 from .proxy import MobileProxy, NoProxy, Proxy, ProxyPool, ServerProxy
 
 log = logging.getLogger(__name__)
 
 
 def build_proxy(
-    proxy: str, change_url: str, cooldown_store: ProxyCooldownStore | None = None
+    proxy: str,
+    change_url: str,
+    cooldown_store: ProxyCooldownStore | None = None,
+    mps_api_token: str = "",
+    mps_proxy_id: str = "",
+    mps_operator: str = "megafone",
 ) -> Proxy:
     """Собрать прокси по конфигу.
 
     ``AVITO_PROXY`` принимает как один адрес, так и список через запятую:
     список → ``ProxyPool`` (перебор при блокировках), один адрес с ``change_url``
-    → ``MobileProxy`` (ротация IP), один без него → ``ServerProxy``, пусто → ``NoProxy``.
+    → ``MobileProxy`` (ротация IP) или ``MpsApiProxy`` (ротация + эскалация
+    региона/оператора через API mobileproxy.space, если заданы
+    ``mps_api_token``/``mps_proxy_id``), один без него → ``ServerProxy``,
+    пусто → ``NoProxy``.
     """
     urls = [part.strip() for part in proxy.split(",") if part.strip()]
     if len(urls) > 1:
         return ProxyPool(urls, cooldown_store=cooldown_store)
     if urls and change_url:
+        if mps_api_token and mps_proxy_id:
+            return MpsApiProxy(
+                urls[0], change_url, mps_api_token, mps_proxy_id, operator=mps_operator
+            )
         return MobileProxy(urls[0], change_url)
     if urls:
         return ServerProxy(urls[0])

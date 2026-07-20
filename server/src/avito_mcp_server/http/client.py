@@ -76,8 +76,40 @@ class HttpClient:
         ``max_attempts`` переопределяет лимит попыток для этого вызова — нужно
         для редирект-хопа на одноразовый токен (см. ``fetch_catalog``), где
         долбить один и тот же URL до общего потолка бессмысленно.
+
+        Если обычная ротация IP исчерпана, а блок держится (см. живой прогон
+        2026-07-20: одна и та же подсеть мобильного прокси даёт 403 на любом
+        адресе внутри неё), пробуем один раз эскалировать прокси — сменить
+        физическую точку/оператора через `Proxy.escalate()` (см. `MpsApiProxy`)
+        — и повторить полный круг попыток заново. Не более одного раза за
+        вызов, чтобы не тратить время бесконечно.
         """
         limit = max_attempts if max_attempts is not None else self.max_attempts
+        escalated = False
+        while True:
+            resp, attempt = self._attempt_get(url, limit)
+            if resp is not None:
+                return resp
+            if escalated:
+                break
+            escalated = True
+            if not getattr(self.proxy, "escalate", lambda: False)():
+                break
+            log.warning(
+                "исчерпаны %s попыток ротации — эскалировал прокси (смена "
+                "региона/оператора) и пробую заново",
+                limit,
+            )
+        via = "прокси не задан" if self.proxy.httpx_proxy() is None else "через прокси"
+        raise RuntimeError(
+            f"не удалось получить {url} за {attempt} из {limit} попыток "
+            f"(блокировки IP, {via}). Нужен чистый RU-прокси: "
+            "задайте AVITO_PROXY и AVITO_PROXY_CHANGE_URL"
+        )
+
+    def _attempt_get(self, url: str, limit: int) -> tuple[Any | None, int]:
+        """Один полный круг попыток без эскалации. Возвращает ``(resp, attempt)``;
+        ``resp is None`` — круг исчерпан без чистого ответа."""
         cookies = self.cookies.get() if self.cookies else None
         blocks = 0
         # Читается после цикла в сообщении об отказе: limit <= 0 (законное
@@ -120,15 +152,11 @@ class HttpClient:
                     self.cookies.handle_block()
                 cookies = self.cookies.get() if self.cookies else None
                 continue
-            return resp
+            return resp, attempt
         # Без прокси менять нечего: NoProxy.rotate() — заглушка, все попытки идут
-        # с одного IP, поэтому подсказка про AVITO_PROXY здесь ключевая.
-        via = "прокси не задан" if self.proxy.httpx_proxy() is None else "через прокси"
-        raise RuntimeError(
-            f"не удалось получить {url} за {attempt} из {limit} попыток "
-            f"(блокировки IP, {via}). Нужен чистый RU-прокси: "
-            "задайте AVITO_PROXY и AVITO_PROXY_CHANGE_URL"
-        )
+        # с одного IP. Круг исчерпан без чистого ответа — решение (эскалировать
+        # или сдаться) принимает вызывающий (`get()`).
+        return None, attempt
 
     def _rotate_and_backoff(
         self, attempt: int, limit: int, blocks: int

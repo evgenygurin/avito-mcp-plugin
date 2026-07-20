@@ -1,8 +1,10 @@
 """Тесты прокси-слоя (mobile/server/none + ротация IP)."""
 
+import avito_mcp_server.proxies.mpsapi as mpsapi_mod
 import avito_mcp_server.proxies.proxy as proxy_mod
 import avito_mcp_server.proxies.factory as factory_mod
 from avito_mcp_server.proxies.factory import build_proxy
+from avito_mcp_server.proxies.mpsapi import MpsApiProxy
 from avito_mcp_server.proxies.proxy import MobileProxy, NoProxy, ProxyPool, ServerProxy
 
 
@@ -237,6 +239,113 @@ def test_proxy_list_ignores_shell_proxy_env(monkeypatch) -> None:
     )
     factory_mod.fetch_proxy_list("https://api.example/list")
     assert captured.get("trust_env") is False
+
+
+def test_factory_builds_mps_api_proxy_when_configured() -> None:
+    p = build_proxy(
+        proxy="u:p@h:1",
+        change_url="https://chg?k=1",
+        mps_api_token="tok",
+        mps_proxy_id="520196",
+    )
+    assert isinstance(p, MpsApiProxy)
+    assert p.httpx_proxy() == "http://u:p@h:1"
+
+
+def test_factory_falls_back_to_mobile_proxy_without_mps_token() -> None:
+    # Без токена/proxy_id эскалация невозможна — используем обычную MobileProxy.
+    p = build_proxy(proxy="u:p@h:1", change_url="https://chg?k=1")
+    assert type(p) is MobileProxy
+
+
+_GEO_LIST_RESPONSE = {
+    "status": "ok",
+    "geo_operator_list": {
+        "831": {
+            "geoid": "831",
+            "geo_caption": "Россия, Московская область, Щербинка #2",
+            "id_country": "1",
+            "count_free": {"megafone": "11"},
+        },
+        "1099": {
+            "geoid": "1099",
+            "geo_caption": "Россия, Новосибирск #17",
+            "id_country": "1",
+            "count_free": {"megafone": "4", "yota": "25"},
+        },
+        "1123": {
+            "geoid": "1123",
+            "geo_caption": "Россия, Уфа #12",
+            "id_country": "1",
+            "count_free": {"megafone": "14", "yota": "5"},
+        },
+    },
+}
+
+
+class _JsonResp:
+    def __init__(self, status_code: int, payload: dict | None = None) -> None:
+        self.status_code = status_code
+        self._payload = payload or {}
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def test_mps_api_proxy_escalate_picks_non_moscow_point(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    def fake_get(url, params=None, headers=None, **kw):  # noqa: ANN001
+        calls.append(params or {})
+        if params["command"] == "get_geo_operator_list":
+            return _JsonResp(200, _GEO_LIST_RESPONSE)
+        return _JsonResp(200, {"status": "ok"})
+
+    monkeypatch.setattr(mpsapi_mod.httpx, "get", fake_get)
+    proxy = MpsApiProxy("u:p@h:1", "https://chg?k=1", "tok", "520196")
+
+    assert proxy.escalate() is True
+    change_call = calls[1]
+    assert change_call["command"] == "change_equipment"
+    # Уфа предпочтён Новосибирску — больше свободных портов megafone (14 > 4),
+    # Щербинка (Московская область) исключена как московская точка.
+    assert change_call["geoid"] == "1123"
+    assert change_call["proxy_id"] == "520196"
+
+
+def test_mps_api_proxy_escalate_does_not_repeat_tried_geoid(monkeypatch) -> None:
+    def fake_get(url, params=None, headers=None, **kw):  # noqa: ANN001
+        if params["command"] == "get_geo_operator_list":
+            return _JsonResp(200, _GEO_LIST_RESPONSE)
+        return _JsonResp(200, {"status": "ok"})
+
+    monkeypatch.setattr(mpsapi_mod.httpx, "get", fake_get)
+    proxy = MpsApiProxy("u:p@h:1", "https://chg?k=1", "tok", "520196")
+
+    assert proxy.escalate() is True  # уходит на Уфу (geoid 1123)
+    assert proxy.escalate() is True  # Уфа уже испробована — берёт Новосибирск
+    assert proxy._tried_geoids == {"1123", "1099"}
+
+
+def test_mps_api_proxy_escalate_returns_false_without_candidates(monkeypatch) -> None:
+    monkeypatch.setattr(
+        mpsapi_mod.httpx,
+        "get",
+        lambda url, **kw: _JsonResp(200, {"geo_operator_list": {}}),
+    )
+    proxy = MpsApiProxy("u:p@h:1", "https://chg?k=1", "tok", "520196")
+    assert proxy.escalate() is False
+
+
+def test_mps_api_proxy_escalate_survives_network_error(monkeypatch) -> None:
+    import httpx as real_httpx
+
+    def boom(url, **kw):
+        raise real_httpx.HTTPError("нет сети")
+
+    monkeypatch.setattr(mpsapi_mod.httpx, "get", boom)
+    proxy = MpsApiProxy("u:p@h:1", "https://chg?k=1", "tok", "520196")
+    assert proxy.escalate() is False
 
 
 def test_cooldown_key_carries_no_credentials() -> None:

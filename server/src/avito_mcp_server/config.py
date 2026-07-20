@@ -51,6 +51,9 @@ def build_http_client() -> HttpClient:
         _proxy_setting(),
         os.getenv("AVITO_PROXY_CHANGE_URL", ""),
         cooldown_store=_optional_storage(),
+        mps_api_token=os.getenv("AVITO_MPS_API_TOKEN", ""),
+        mps_proxy_id=os.getenv("AVITO_PROXY_ID", ""),
+        mps_operator=os.getenv("AVITO_MPS_OPERATOR", "megafone"),
     )
     provider = build_cookies_provider(
         os.getenv("AVITO_COOKIE_PROVIDER", DEFAULT_COOKIE_PROVIDER),

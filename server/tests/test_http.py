@@ -429,6 +429,69 @@ def test_get_raises_contract_error_when_attempts_disabled(monkeypatch) -> None:
         client.get("https://www.avito.ru/x")
 
 
+class _EscalatingDeadEndProxy:
+    """Ротация невозможна, но эскалация (смена региона/оператора) — да."""
+
+    def __init__(self) -> None:
+        self.rotations = 0
+        self.escalations = 0
+
+    def httpx_proxy(self) -> str:
+        return "http://x"
+
+    def rotate(self) -> bool:
+        self.rotations += 1
+        return False
+
+    def escalate(self) -> bool:
+        self.escalations += 1
+        return True
+
+
+def test_get_escalates_proxy_after_exhausting_rotation(monkeypatch) -> None:
+    # Живой прогон 2026-07-20: вся подсеть мобильного прокси прожжена, обычная
+    # ротация IP не спасает. После исчерпания круга попыток клиент должен
+    # попробовать эскалировать прокси (смена региона/оператора) и повторить.
+    _FakeSession.seq = [_Resp(403), _Resp(200, "<html>ok</html>")]
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
+    proxy = _EscalatingDeadEndProxy()
+    client = HttpClient(proxy=proxy, cookies=None, max_attempts=1, wait_after_rotate=0)
+
+    resp = client.get("https://www.avito.ru/x")
+
+    assert resp.status_code == 200
+    assert proxy.escalations == 1
+
+
+def test_get_raises_when_escalation_also_fails(monkeypatch) -> None:
+    _FakeSession.seq = [_Resp(403)]
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
+    client = HttpClient(
+        proxy=_DeadEndProxy(), cookies=None, max_attempts=1, wait_after_rotate=0
+    )
+    with pytest.raises(RuntimeError):
+        client.get("https://www.avito.ru/x")
+
+
+def test_get_escalates_at_most_once_per_call(monkeypatch) -> None:
+    # Если и после эскалации блок держится — сдаёмся, а не эскалируем бесконечно.
+    _FakeSession.seq = [_Resp(403), _Resp(403)]
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
+    )
+    proxy = _EscalatingDeadEndProxy()
+    client = HttpClient(proxy=proxy, cookies=None, max_attempts=1, wait_after_rotate=0)
+
+    with pytest.raises(RuntimeError):
+        client.get("https://www.avito.ru/x")
+
+    assert proxy.escalations == 1
+
+
 def test_transport_errors_retry_even_without_rotation(monkeypatch) -> None:
     # Таймаут — не блокировка: он лечится повтором, а не сменой IP. Без
     # прокси (rotate() всегда False) обрывать на первой ошибке нельзя.

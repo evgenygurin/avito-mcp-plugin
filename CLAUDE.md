@@ -45,6 +45,9 @@ Avito по-прежнему отдаёт 403/429 после 2–3 запросо
 | `AVITO_VK_TOKEN`, `AVITO_VK_USER_IDS` | VK-уведомления |
 | `AVITO_SUPABASE_DSN` | DSN Postgres проекта Supabase — **единственное** хранилище |
 | `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций IP (дефолт 5; больше — линейный рост ожидания) |
+| `AVITO_MPS_API_TOKEN` | Bearer-токен API mobileproxy.space (mpsapi.com) — включает автоэскалацию прокси |
+| `AVITO_PROXY_ID` | ID прокси в кабинете mobileproxy.space (`command=get_my_proxy`) — нужен вместе с `AVITO_MPS_API_TOKEN` |
+| `AVITO_MPS_OPERATOR` | оператор для эскалации (дефолт `megafone`) |
 | `AVITO_SKILLS_DIR` | явный override каталога skills |
 | `CLAUDE_PLUGIN_ROOT` | резолв `skills/` при установке плагина (`${CLAUDE_PLUGIN_ROOT}/skills`) |
 | `LOG_LEVEL` | объявлена в `.env.example`, но **пока нигде не читается** (аспирационная) |
@@ -97,6 +100,8 @@ CI — [`.github/workflows/ci.yml`](.github/workflows/ci.yml) на push в `main
 avito_mcp_server/
 ├── cookies/       # провайдеры кук: spfa (дефолт) / own / playwright
 ├── proxies/       # Mobile/Server/None + ротация-до-чистого (rotate-until-clean)
+│                  #   + mpsapi.py (MpsApiProxy: автоэскалация региона/оператора
+│                  #   через API mobileproxy.space, когда прожжена вся подсеть)
 ├── http/          # curl_cffi клиент (impersonate, follow-редирект, retry)
 ├── export/        # xlsx / json / csv
 ├── notifications/ # Telegram, VK
