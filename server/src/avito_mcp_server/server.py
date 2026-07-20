@@ -8,8 +8,14 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
+from .logging_setup import setup_logging
 from .skills_provider import register_skills
 from .tools import diagnostics, exporting, listings, monitoring, notifications, search
+
+# До регистрации тулз: иначе диагностика самой сборки (список прокси из
+# кабинета, подъём кук из кэша) осталась бы невидимой. Каждый вызов тулзы —
+# новый процесс, поэтому настройка на импорте модуля, а не только в main().
+setup_logging()
 
 mcp = FastMCP("avito-mcp-server")
 
