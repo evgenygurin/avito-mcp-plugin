@@ -97,6 +97,10 @@ class HttpClient:
         self._impersonate = random.choice(_IMPERSONATE)
         self._session: Any | None = None
         self._session_proxy: str | None = None
+        # Куки выгорели и мешают? Клиент живёт на весь обход каталога, и без
+        # памяти об этом КАЖДАЯ следующая страница снова начиналась бы с них —
+        # лишний 403 и потраченная попытка на страницу.
+        self._skip_cookies = False
 
     def _remaining(self) -> float:
         """Сколько секунд бюджета осталось (``inf``, если бюджета нет)."""
@@ -198,9 +202,11 @@ class HttpClient:
         """Один полный круг попыток без эскалации. Возвращает ``(resp, attempt)``;
         ``resp is None`` — круг исчерпан без чистого ответа."""
         with timed("cookies.get", logger=log):
-            cookies = self.cookies.get() if self.cookies else None
+            cookies = (
+                self.cookies.get() if self.cookies and not self._skip_cookies else None
+            )
         blocks = 0
-        tried_without_cookies = False
+        tried_without_cookies = self._skip_cookies
         # Читается после цикла в сообщении об отказе: limit <= 0 (законное
         # "не ротировать" из env) не должен давать UnboundLocalError вместо
         # контрактного RuntimeError.
@@ -270,6 +276,9 @@ class HttpClient:
                     log.warning("блокировка %s — обновляю куки", resp.status_code)
                     with timed("cookies.refresh", logger=log):
                         healed = self.cookies.handle_block()
+                    if healed:
+                        # Куки свежие — прежний вердикт о них недействителен.
+                        self._skip_cookies = False
                     if not healed:
                         # Лечить куки нечем (провайдер `own`, троттлинг spfa) —
                         # повтор с теми же куками и тем же адресом ушёл бы в тот
@@ -284,11 +293,18 @@ class HttpClient:
                     )
                     if not rotated:
                         break
-                cookies = self.cookies.get() if self.cookies else None
+                cookies = (
+                    self.cookies.get()
+                    if self.cookies and not self._skip_cookies
+                    else None
+                )
                 # Комбинация сменилась — бесплатную попытку без кук имеет смысл
                 # повторить и на ней.
                 tried_without_cookies = False
                 continue
+            if cookies is None and self.cookies and not self._skip_cookies:
+                log.info("запрос прошёл без кук — дальше не прикладываю их")
+                self._skip_cookies = True
             return resp, attempt
         # Без прокси менять нечего: NoProxy.rotate() — заглушка, все попытки идут
         # с одного IP. Круг исчерпан без чистого ответа — решение (эскалировать

@@ -137,3 +137,28 @@ def test_cookieless_attempt_does_not_shift_the_ladder(monkeypatch) -> None:
         pass
 
     assert refreshed, "обновление кук выпало из лестницы совсем"
+
+
+def test_remembers_that_cookies_hurt_for_the_next_request(monkeypatch) -> None:
+    """Успех без кук должен запоминаться на время жизни клиента.
+
+    Клиент один на весь обход каталога. Если куки выгорели, а без них запрос
+    проходит, то начинать КАЖДУЮ следующую страницу снова с них — значит
+    дарить по одному лишнему 403 и по одной потраченной попытке на страницу.
+    """
+    _RecordingSession.sent = []
+    _RecordingSession.seq = [_Resp(403), _Resp(200, "первая"), _Resp(200, "вторая")]
+    monkeypatch.setattr(
+        hc, "_build_session", lambda proxy_url, impersonate: _RecordingSession()
+    )
+    client = HttpClient(
+        proxy=_Proxy(), cookies=_Cookies(), max_attempts=4, wait_after_rotate=0
+    )
+
+    client.get("https://www.avito.ru/x")  # 403 с куками, затем 200 без них
+    _RecordingSession.sent.clear()
+    client.get("https://www.avito.ru/y")  # следующая страница того же обхода
+
+    assert _RecordingSession.sent[0] is None, (
+        "второй запрос снова ушёл с куками, которые только что дали 403"
+    )
