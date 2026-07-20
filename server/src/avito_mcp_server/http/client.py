@@ -27,6 +27,22 @@ from ..utils import mask_proxy, to_absolute_avito_url
 # curl_cffi резолвит его в edge101 — отпечаток 2022 года, заметный антиботу.
 _IMPERSONATE = ("chrome", "safari")
 _BLOCK_CODES = (401, 403, 429)
+#: Коды, которые действительно лечатся ожиданием. 429 — «слишком часто», пауза
+#: тут по существу. А 403/401 означают «этот выходной IP или эти куки в бане у
+#: Qrator»: репутация адреса не восстанавливается за десятки секунд, лечится
+#: только смена комбинации (транспорт/куки/IP). Живой прогон 2026-07-20 показал
+#: цену смешения — ``backoff.sleep=90.6s`` из 120 с бюджета при 3.7 с полезной
+#: работы и 11 ответах 403 против 2 ответов 429.
+_RATE_LIMIT_CODES = (429,)
+
+#: Через сколько блокировок принудительно обновлять куки. У 403 две независимые
+#: причины — выгоревшие куки и забаненный выходной IP, и замеры 2026-07-20
+#: показали, что они меняются местами в течение получаса. Лечение кук стоит
+#: 0.6 с против 3.6–4.3 с на ротацию IP, поэтому пробовать его надо рано; но не
+#: на каждой блокировке — сначала бесплатная смена транспорта (см. ChainProxy),
+#: а покупка кук стоит денег. Раньше здесь стояло 5 — куки успевали обновиться
+#: только после того, как бюджет времени был практически выбран.
+_COOKIE_REFRESH_EVERY = 2
 
 log = logging.getLogger(__name__)
 
@@ -227,18 +243,29 @@ class HttpClient:
             if self.cookies:
                 self.cookies.update(resp)
             if resp.status_code in self.block_codes:
-                log.warning("блокировка %s — ротирую IP", resp.status_code)
-                blocks, rotated = self._rotate_and_backoff(attempt, limit, blocks)
-                if not rotated:
-                    break
+                blocks += 1
                 if attempt >= limit:
-                    # Круг и так закончен (см. _rotate_and_backoff) — обновлять
-                    # куки под несуществующую следующую попытку незачем. Для
-                    # spfa это платный вызов, а не бесплатный кэш-промах.
+                    # Круг закончен: лечить блокировку под несуществующую
+                    # следующую попытку незачем — для spfa это платный вызов.
                     break
-                # Каждые 5 блокировок — принудительно обновить куки (могли протухнуть).
-                if blocks % 5 == 0 and self.cookies:
-                    self.cookies.handle_block()
+                # Лечение по возрастанию цены: куки ~0.6 с против ~5 с на смену
+                # выходного адреса, а помогают они примерно одинаково часто
+                # (см. test_http_recovery_ladder). Раньше дорогое средство шло
+                # на КАЖДУЮ блокировку: profile дал proxy.rotate=96.9s×19 при
+                # 19.9 с полезной работы.
+                if blocks % _COOKIE_REFRESH_EVERY != 0 and self.cookies:
+                    log.warning("блокировка %s — обновляю куки", resp.status_code)
+                    with timed("cookies.refresh", logger=log):
+                        self.cookies.handle_block()
+                else:
+                    log.warning(
+                        "блокировка %s — меняю выходной адрес", resp.status_code
+                    )
+                    _, rotated = self._rotate_and_backoff(
+                        attempt, limit, blocks - 1, status=resp.status_code
+                    )
+                    if not rotated:
+                        break
                 cookies = self.cookies.get() if self.cookies else None
                 continue
             return resp, attempt
@@ -248,7 +275,7 @@ class HttpClient:
         return None, attempt
 
     def _rotate_and_backoff(
-        self, attempt: int, limit: int, blocks: int
+        self, attempt: int, limit: int, blocks: int, status: int | None = None
     ) -> tuple[int, bool]:
         """Сменить IP и выждать нарастающий backoff. Общий путь для кода-блокировки
         и транспортной ошибки — раньше был продублирован в обеих ветках ``get()``.
@@ -282,7 +309,15 @@ class HttpClient:
         if rotated:
             # Соединение осталось бы на прежнем выходном IP — см. _drop_session.
             self._drop_session()
-        if rotated and attempt < limit:
+        # Смена звена цепочки транспортов уже дала другой выходной адрес —
+        # «остывать» нечему, а пауза перед прямым соединением (0.63 с на
+        # запрос) была бы в разы дороже самой работы.
+        instant = rotated and getattr(self.proxy, "rotation_was_instant", False)
+        # Ждать имеет смысл только когда нас притормаживают по частоте (429).
+        # 403/401 — бан адреса или кук: сон его не снимает, лечит смена
+        # комбинации, которая уже произошла выше.
+        rate_limited = status in _RATE_LIMIT_CODES
+        if rotated and not instant and rate_limited and attempt < limit:
             delay = min(self.wait_after_rotate * (2**blocks), self.backoff_cap)
             remaining = max(0.0, delay - (time.monotonic() - started))
             # Спать дольше остатка бюджета бессмысленно: проснёмся уже за его

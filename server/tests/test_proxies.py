@@ -8,14 +8,28 @@ from avito_mcp_server.proxies.mpsapi import MpsApiProxy
 from avito_mcp_server.proxies.proxy import MobileProxy, NoProxy, ProxyPool, ServerProxy
 
 
+def configured(proxy):
+    """Прокси, описанный настройками, без ведущего прямого звена.
+
+    Фабрика по умолчанию отдаёт ``ChainProxy([NoProxy(), <настроенный>])`` —
+    прямое соединение пробуется первым (см. test_proxies_factory_chain.py).
+    Тестам поведения самого прокси нужно последнее звено.
+    """
+    from avito_mcp_server.proxies.proxy import ChainProxy
+
+    return proxy.links[-1] if isinstance(proxy, ChainProxy) else proxy
+
+
 def test_factory_mobile_when_change_url() -> None:
-    p = build_proxy(proxy="u:p@h:1", change_url="https://chg?k=1")
+    p = configured(build_proxy(proxy="u:p@h:1", change_url="https://chg?k=1"))
     assert isinstance(p, MobileProxy)
     assert p.httpx_proxy() == "http://u:p@h:1"
 
 
 def test_factory_server_when_no_change_url() -> None:
-    assert isinstance(build_proxy(proxy="u:p@h:1", change_url=""), ServerProxy)
+    assert isinstance(
+        configured(build_proxy(proxy="u:p@h:1", change_url="")), ServerProxy
+    )
 
 
 def test_factory_none_when_empty() -> None:
@@ -55,7 +69,7 @@ def test_mobile_rotate_handles_invalid_change_url() -> None:
 
 def test_pool_from_comma_separated_list() -> None:
     # Один выжженный IP не должен останавливать работу: пул перебирает адреса.
-    pool = build_proxy(proxy="u:p@h1:1, u:p@h2:2", change_url="")
+    pool = configured(build_proxy(proxy="u:p@h1:1, u:p@h2:2", change_url=""))
     assert isinstance(pool, ProxyPool)
     assert pool.httpx_proxy() == "http://u:p@h1:1"
     assert pool.rotate() is True
@@ -80,13 +94,15 @@ def test_pool_rotates_ip_when_change_url_given(monkeypatch) -> None:
     monkeypatch.setattr(
         proxy_mod.httpx, "get", lambda url, **kw: (calls.append(str(url)), _R())[1]
     )
-    pool = build_proxy(proxy="u:p@h:1", change_url="https://chg?k=1")
+    pool = configured(build_proxy(proxy="u:p@h:1", change_url="https://chg?k=1"))
     assert pool.rotate() is True
     assert calls and "format=json" in calls[0]
 
 
 def test_single_proxy_without_change_url_is_server_proxy() -> None:
-    assert isinstance(build_proxy(proxy="u:p@h:1", change_url=""), ServerProxy)
+    assert isinstance(
+        configured(build_proxy(proxy="u:p@h:1", change_url="")), ServerProxy
+    )
 
 
 class _FakeCooldown:
@@ -242,11 +258,13 @@ def test_proxy_list_ignores_shell_proxy_env(monkeypatch) -> None:
 
 
 def test_factory_builds_mps_api_proxy_when_configured() -> None:
-    p = build_proxy(
-        proxy="u:p@h:1",
-        change_url="https://chg?k=1",
-        mps_api_token="tok",
-        mps_proxy_id="520196",
+    p = configured(
+        build_proxy(
+            proxy="u:p@h:1",
+            change_url="https://chg?k=1",
+            mps_api_token="tok",
+            mps_proxy_id="520196",
+        )
     )
     assert isinstance(p, MpsApiProxy)
     assert p.httpx_proxy() == "http://u:p@h:1"
@@ -254,7 +272,7 @@ def test_factory_builds_mps_api_proxy_when_configured() -> None:
 
 def test_factory_falls_back_to_mobile_proxy_without_mps_token() -> None:
     # Без токена/proxy_id эскалация невозможна — используем обычную MobileProxy.
-    p = build_proxy(proxy="u:p@h:1", change_url="https://chg?k=1")
+    p = configured(build_proxy(proxy="u:p@h:1", change_url="https://chg?k=1"))
     assert type(p) is MobileProxy
 
 

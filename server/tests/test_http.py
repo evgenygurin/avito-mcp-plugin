@@ -262,7 +262,9 @@ def test_fetch_catalog_refresh_cycles_dont_exhaust_redirect_depth() -> None:
 def test_backoff_grows_and_caps(monkeypatch) -> None:
     # Фиксированные 9 с на каждую блокировку либо слишком долго на первой попытке,
     # либо слишком агрессивно на десятой. Пауза должна расти и упираться в потолок.
-    _FakeSession.seq = [_Resp(403) for _ in range(10)]
+    # Именно 429: пауза положена только rate-limit'у (см.
+    # test_http_backoff_only_rate_limit.py), 403 лечится сменой комбинации.
+    _FakeSession.seq = [_Resp(429) for _ in range(10)]
     waited: list[float] = []
     monkeypatch.setattr(
         hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
@@ -286,7 +288,7 @@ def test_backoff_grows_and_caps(monkeypatch) -> None:
 
 
 def test_backoff_disabled_when_wait_is_zero(monkeypatch) -> None:
-    _FakeSession.seq = [_Resp(403) for _ in range(5)]
+    _FakeSession.seq = [_Resp(429) for _ in range(5)]
     waited: list[float] = []
     monkeypatch.setattr(
         hc, "_build_session", lambda proxy_url, impersonate: _FakeSession()
