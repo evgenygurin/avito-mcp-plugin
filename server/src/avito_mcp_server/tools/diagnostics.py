@@ -18,6 +18,11 @@ from .execution import run_blocking
 log = logging.getLogger(__name__)
 
 _PROBE_URL = "https://www.avito.ru/nizhniy_novgorod/kvartiry/prodam"
+# Диагностика должна отвечать быстро и предсказуемо, а не крутить полный
+# rotate-until-clean (дефолт AVITO_MAX_ROTATE_ATTEMPTS=18, backoff до 60с —
+# это до ~20 минут). 3 попытки с тем же прокси хватает, чтобы отличить
+# "прокси мёртв" от случайной блокировки, и укладывается в timeout=180 тулзы.
+_SINGLE_PROXY_PROBE_ATTEMPTS = 3
 
 
 def register(mcp: FastMCP) -> None:
@@ -92,7 +97,17 @@ def register(mcp: FastMCP) -> None:
                     probes=probes,
                 )
 
-            ok, detail = _probe(client, probe_url)
+            # Без пула — тоже не полный rotate-until-clean (18 попыток с
+            # backoff до 60с — это до ~20 минут внутри asyncio.to_thread,
+            # который нельзя отменить по истечении timeout тулзы: поток
+            # продолжит висеть в фоне). Диагностике достаточно нескольких
+            # быстрых попыток на том же прокси/куках.
+            probe_client = HttpClient(
+                proxy=client.proxy,
+                cookies=client.cookies,
+                max_attempts=_SINGLE_PROXY_PROBE_ATTEMPTS,
+            )
+            ok, detail = _probe(probe_client, probe_url)
             return ProxyHealth(
                 ok=ok,
                 cookie_provider=provider,
