@@ -72,7 +72,7 @@ class HttpClient:
         wait_after_rotate: float = 3.0,
         timeout: float = 20.0,
         block_codes: tuple[int, ...] = _BLOCK_CODES,
-        backoff_cap: float = 60.0,
+        backoff_cap: float = 15.0,
         budget: float | None = None,
     ) -> None:
         self.proxy = proxy
@@ -200,6 +200,7 @@ class HttpClient:
         with timed("cookies.get", logger=log):
             cookies = self.cookies.get() if self.cookies else None
         blocks = 0
+        tried_without_cookies = False
         # Читается после цикла в сообщении об отказе: limit <= 0 (законное
         # "не ротировать" из env) не должен давать UnboundLocalError вместо
         # контрактного RuntimeError.
@@ -243,7 +244,6 @@ class HttpClient:
             if self.cookies:
                 self.cookies.update(resp)
             if resp.status_code in self.block_codes:
-                blocks += 1
                 if attempt >= limit:
                     # Круг закончен: лечить блокировку под несуществующую
                     # следующую попытку незачем — для spfa это платный вызов.
@@ -253,6 +253,18 @@ class HttpClient:
                 # (см. test_http_recovery_ladder). Раньше дорогое средство шло
                 # на КАЖДУЮ блокировку: profile дал proxy.rotate=96.9s×19 при
                 # 19.9 с полезной работы.
+                # Самое дешёвое лекарство — вообще без кук: выгоревшие куки не
+                # просто бесполезны, они портят запрос, который без них
+                # проходит (замер 2026-07-20: без кук 200 за 0.77 с, с ними
+                # 403). Не стоит ни денег, ни секунд, ни ротации — и НЕ считается
+                # ступенью лестницы: иначе сдвигает её чётность и вытесняет
+                # обновление кук (в живом прогоне cookies.refresh исчез совсем).
+                if cookies and not tried_without_cookies:
+                    log.warning("блокировка %s — пробую без кук", resp.status_code)
+                    tried_without_cookies = True
+                    cookies = None
+                    continue
+                blocks += 1
                 healed = False
                 if blocks % _COOKIE_REFRESH_EVERY != 0 and self.cookies:
                     log.warning("блокировка %s — обновляю куки", resp.status_code)
@@ -273,6 +285,9 @@ class HttpClient:
                     if not rotated:
                         break
                 cookies = self.cookies.get() if self.cookies else None
+                # Комбинация сменилась — бесплатную попытку без кук имеет смысл
+                # повторить и на ней.
+                tried_without_cookies = False
                 continue
             return resp, attempt
         # Без прокси менять нечего: NoProxy.rotate() — заглушка, все попытки идут
