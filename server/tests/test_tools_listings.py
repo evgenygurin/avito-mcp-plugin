@@ -15,7 +15,7 @@ FIX = Path(__file__).parent / "fixtures"
 class _FakeHttpClient:
     proxy = NoProxy()
 
-    def get(self, url: str):
+    def get(self, url: str, max_attempts: int | None = None):
         html = (FIX / "listing_detail.html").read_text(encoding="utf-8")
         from unittest.mock import Mock
 
@@ -74,7 +74,7 @@ async def test_get_listing_errors_on_missing_data(monkeypatch) -> None:
 
     from unittest.mock import Mock
 
-    def _empty(url: str):
+    def _empty(url: str, max_attempts: int | None = None):
         resp = Mock()
         resp.text = "<html>no data</html>"
         return resp
@@ -87,3 +87,37 @@ async def test_get_listing_errors_on_missing_data(monkeypatch) -> None:
             await client.call_tool(
                 "get_listing", {"id_or_url": "https://www.avito.ru/x"}
             )
+
+
+async def test_get_listing_follows_ssr_redirect(monkeypatch) -> None:
+    # Карточка объявления тоже приходит SSR-редиректом на канонический URL:
+    # без хопа парсер видит страницу-редирект и объявление «не находится».
+    from unittest.mock import Mock
+
+    redirect = (
+        '<script type="mime/invalid" data-mfe-state="true">'
+        '{"i18n":{"hasMessages":true},"loaderData":{"data":'
+        '{"redirected":true,"url":"/items/7890298070"}}}</script>'
+    )
+    detail = (FIX / "listing_detail.html").read_text(encoding="utf-8")
+    pages = {"https://www.avito.ru/x": redirect}
+    seen: list[str] = []
+
+    class _Redirecting:
+        proxy = NoProxy()
+
+        def get(self, url: str, max_attempts: int | None = None):
+            seen.append(url)
+            resp = Mock()
+            resp.text = pages.get(url, detail)
+            return resp
+
+    monkeypatch.setattr(listings_mod, "build_http_client", _Redirecting)
+
+    async with Client(_mcp()) as client:
+        res = await client.call_tool(
+            "get_listing", {"id_or_url": "https://www.avito.ru/x"}
+        )
+
+    assert seen == ["https://www.avito.ru/x", "https://www.avito.ru/items/7890298070"]
+    assert res.data.id == 7890298070

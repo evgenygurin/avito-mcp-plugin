@@ -44,7 +44,7 @@ Avito по-прежнему отдаёт 403/429 после 2–3 запросо
 | `AVITO_TG_TOKEN`, `AVITO_TG_CHAT_IDS` | Telegram-уведомления |
 | `AVITO_VK_TOKEN`, `AVITO_VK_USER_IDS` | VK-уведомления |
 | `AVITO_SUPABASE_DSN` | DSN Postgres проекта Supabase — **единственное** хранилище |
-| `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций IP (дефолт 18) |
+| `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций IP (дефолт 5; больше — линейный рост ожидания) |
 | `AVITO_SKILLS_DIR` | явный override каталога skills |
 | `CLAUDE_PLUGIN_ROOT` | резолв `skills/` при установке плагина (`${CLAUDE_PLUGIN_ROOT}/skills`) |
 | `LOG_LEVEL` | объявлена в `.env.example`, но **пока нигде не читается** (аспирационная) |
@@ -239,7 +239,9 @@ SemVer синхронно в **пяти** манифестах: `.claude-plugin/
   сессии он сам не респавнится). Для проверки кода без этого — in-memory `Client(mcp)`
   из рабочего дерева.
 - **Долгие сетевые прогоны запускай фоном с логом в файл + `Monitor` на хвост.**
-  `HttpClient.get` крутит до 18 попыток; без логов это выглядит как зависание.
+  `HttpClient.get` крутит до `AVITO_MAX_ROTATE_ATTEMPTS` попыток с backoff; без
+  логов это выглядит как зависание. Если `Proxy.rotate()` вернул `False`
+  (сменить IP нечем), цикл обрывается сразу — это не баг, а отказ по существу.
 - **Классификатор auto-режима блокирует внешние изменения** (пауза проекта Supabase,
   запуск парсинга). Не обходить — просить пользователя сделать это самому.
 - **Supabase free-план: 2 активных проекта.** Статусы `RESTORING`/`PAUSING` считаются

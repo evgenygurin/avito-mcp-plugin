@@ -58,7 +58,11 @@ def build_http_client() -> HttpClient:
         own_cookies=_parse_own_cookies(os.getenv("AVITO_OWN_COOKIES")),
         proxy=proxy.httpx_proxy(),
     )
-    max_attempts = int(os.getenv("AVITO_MAX_ROTATE_ATTEMPTS", "18"))
+    # 18 попыток при backoff min(9*2^n, 60) — это 903с чистого сна плюс
+    # таймауты, то есть тулза упиралась в собственный timeout=900 вместо
+    # понятного отказа. Пять ротаций (9+18+36+60 = 123с) исчерпывают полезную
+    # часть: если чистый IP не нашёлся за них, он не найдётся и за восемнадцать.
+    max_attempts = int(os.getenv("AVITO_MAX_ROTATE_ATTEMPTS", "5"))
     return HttpClient(proxy=proxy, cookies=provider, max_attempts=max_attempts)
 
 

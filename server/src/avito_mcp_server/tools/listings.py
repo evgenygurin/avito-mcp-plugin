@@ -6,6 +6,7 @@ from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
 from ..config import build_http_client
+from ..http.client import fetch_page
 from ..models import Listing
 from ..parser import parse_listing_detail
 from ..utils import to_listing_url
@@ -40,7 +41,10 @@ def register(mcp: FastMCP) -> None:
 
         def _run() -> Listing:
             client = build_http_client()
-            resp = client.get(url)
+            # fetch_page, а не client.get: карточка объявления тоже приходит
+            # SSR-редиректом на канонический URL, и без хопа парсер разбирает
+            # страницу-редирект вместо объявления.
+            resp = fetch_page(client, url)
             listing = parse_listing_detail(resp.text, with_views=with_views)
             if listing is None:
                 raise RuntimeError("не удалось извлечь данные объявления из страницы")
