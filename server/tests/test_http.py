@@ -279,7 +279,10 @@ def test_backoff_grows_and_caps(monkeypatch) -> None:
     with pytest.raises(RuntimeError):
         client.get("https://www.avito.ru/x")
 
-    assert waited == [2.0, 4.0, 8.0, 10.0, 10.0]
+    # Округление: из паузы вычитается время самой ротации (у фейка оно
+    # микросекундное, у настоящего мобильного прокси — секунды, см.
+    # test_http_backoff_tuning.py).
+    assert [round(seconds, 3) for seconds in waited] == [2.0, 4.0, 8.0, 10.0, 10.0]
 
 
 def test_backoff_disabled_when_wait_is_zero(monkeypatch) -> None:

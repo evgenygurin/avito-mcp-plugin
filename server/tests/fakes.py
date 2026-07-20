@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable, Sequence
 
+from avito_mcp_server.proxies.proxy import NoProxy
 from avito_mcp_server.storage import SeenRow
 
 
@@ -77,3 +78,29 @@ class FakeStorage:
 
     def forget_proxy(self, proxy: str) -> None:
         self.cooldown.pop(proxy, None)
+
+
+class FakeHttpClient:
+    """Двойник ``HttpClient`` для тулз: контекстный менеджер без сети.
+
+    Настоящий клиент держит открытое TLS-соединение и освобождает его в
+    ``close()``, поэтому тулзы используют его через ``with``. Тестовым двойникам
+    достаточно унаследоваться отсюда и добавить свой ``get``.
+    """
+
+    proxy = NoProxy()
+
+    def __init__(self, budget_scale: int = 1) -> None:
+        # Тулзы просят бюджет пропорционально числу страниц — двойник обязан
+        # принимать тот же аргумент, иначе подмена ловит TypeError вместо
+        # проверки поведения.
+        self.budget_scale = budget_scale
+
+    def __enter__(self) -> "FakeHttpClient":
+        return self
+
+    def __exit__(self, *exc_info: object) -> bool:
+        return False
+
+    def close(self) -> None:
+        pass

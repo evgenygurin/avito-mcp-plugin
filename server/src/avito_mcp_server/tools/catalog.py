@@ -24,6 +24,8 @@ def collect_listings(url: str, spec: FilterSpec, pages: int) -> list[Listing]:
 
     Блокирующая функция: вызывается из потока (см. ``tools.execution``).
     """
-    client = build_http_client()
-    found = walk_pages(fetch_catalog, client, url, pages, pause=page_pause())
+    # with: клиент переиспользует TLS-соединение между страницами и обязан
+    # его отпустить — иначе сокет живёт до сборки мусора (см. HttpClient.close).
+    with build_http_client(budget_scale=pages) as client:
+        found = walk_pages(fetch_catalog, client, url, pages, pause=page_pause())
     return apply_filters(found, spec)
