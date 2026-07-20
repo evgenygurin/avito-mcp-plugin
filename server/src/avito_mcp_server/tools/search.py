@@ -16,13 +16,10 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-        # Worst case на ОДНУ страницу — до AVITO_MAX_ROTATE_ATTEMPTS (18)
-        # попыток с растущим backoff (потолок 60с) — уже ~900с; asyncio.to_thread
-        # сам по себе не отменяем. Таймаут превращает зависший скрап в ловимую
-        # ошибку клиента вместо неотличимого от реального зависания сервера.
-        # При pages > 1 легитимный прогон на плохом пуле теоретически может
-        # упереться в потолок раньше естественного завершения — компромисс в
-        # пользу отменяемости, а не бесконечного ожидания.
+        # Основную границу держит сам движок: AVITO_REQUEST_BUDGET на клиента
+        # (× число страниц). Этот таймаут — вторая линия обороны на случай,
+        # если работа встанет вне цикла попыток: asyncio.to_thread не
+        # отменяется, поэтому клиенту нужен свой предел ожидания.
         timeout=900,
     )
     async def search_listings(
@@ -73,6 +70,8 @@ def register(mcp: FastMCP) -> None:
         items = await run_blocking(
             lambda: collect_listings(url, spec, pages),
             failure="не удалось получить объявления",
+            operation="search_listings",
+            ctx=ctx,
         )
 
         await ctx.info(f"найдено {len(items)} объявлений")

@@ -8,6 +8,8 @@ from collections.abc import Callable
 from typing import Any
 
 from ..models import Listing
+from ..progress import report
+from ..timing import timed
 from ..utils import to_absolute_avito_url
 from .mapping import extract_facts
 from .state import PageKind, PageResult, explain_status
@@ -57,9 +59,14 @@ def walk_pages(
         if page_url is None:
             break
         if index and pause:
-            time.sleep(pause)
+            with timed("page.pause", logger=log, seconds=f"{pause:.1f}"):
+                time.sleep(pause)
         log.info("страница %s/%s: %s", index + 1, total, page_url)
-        kind, catalog = fetch(client, page_url)
+        # ДО запроса, а не после: страница с ротациями IP идёт минуты, и
+        # клиенту важно знать, что сервер занят именно ей.
+        report(index + 1, total, f"страница {index + 1}/{total}")
+        with timed("page.fetch", logger=log, page=index + 1):
+            kind, catalog = fetch(client, page_url)
         if kind != PageKind.OK:
             # Номер страницы и URL — в тексте ошибки: при pages>1 без них
             # падение на седьмой странице неотличимо от падения на первой.
@@ -67,10 +74,11 @@ def walk_pages(
                 f"{explain_status(kind)} — страница {index + 1}/{total}: {page_url}"
             )
         # Каталог сдвигается между запросами — дедуп по id обязателен.
-        for listing in extract_facts(catalog):
-            if listing.id not in seen:
-                seen.add(listing.id)
-                collected.append(listing)
+        with timed("page.parse", logger=log, page=index + 1):
+            for listing in extract_facts(catalog):
+                if listing.id not in seen:
+                    seen.add(listing.id)
+                    collected.append(listing)
         log.info(
             "страница %s: всего накоплено %s объявлений", index + 1, len(collected)
         )

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import httpx
 
+from ..timing import timed
 from .base import CookiesProvider
 
 API_URL = "https://spfa.ru/api"
@@ -67,13 +68,16 @@ class SpfaCookiesProvider(CookiesProvider):
         self._buy()
 
     def _buy(self) -> dict:
-        resp = httpx.post(
-            f"{API_URL}/cookies/",
-            json={"api_key": self.api_key},
-            headers=self._headers,
-            timeout=self.timeout,
-            trust_env=False,
-        )
+        # Покупка кук — платный внешний вызов на несколько секунд: в сводке
+        # он должен быть отделим от собственно запросов к Avito.
+        with timed("cookies.buy", logger=log):
+            resp = httpx.post(
+                f"{API_URL}/cookies/",
+                json={"api_key": self.api_key},
+                headers=self._headers,
+                timeout=self.timeout,
+                trust_env=False,
+            )
         resp.raise_for_status()
         results = resp.json().get("results", {})
         item_id = results.get("id")

@@ -18,6 +18,7 @@ from sqlalchemy import Engine, bindparam, create_engine, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
+from ..timing import timed
 from .models import PriceHistory, ProxyCooldown, SeenItem
 from .rows import SeenRow
 
@@ -110,7 +111,10 @@ class SupabaseStorage:
         ids = list(item_ids)
         if not ids:
             return {}
-        with self._session() as session:
+        with (
+            timed("db.fetch_seen", logger=log, ids=len(ids)),
+            self._session() as session,
+        ):
             rows = session.execute(
                 select(SeenItem.id, SeenItem.price).where(SeenItem.id.in_(ids))
             ).all()
@@ -157,7 +161,11 @@ class SupabaseStorage:
                 },
             )
         )
-        with self._session() as session, session.begin():
+        with (
+            timed("db.upsert_seen", logger=log, rows=len(deduped)),
+            self._session() as session,
+            session.begin(),
+        ):
             session.execute(
                 stmt,
                 [
@@ -202,7 +210,7 @@ class SupabaseStorage:
 
     def get_price_history(self, item_id: int) -> list[tuple[float, float]]:
         """История цены, свежая первой: список ``(цена, время)``."""
-        with self._session() as session:
+        with timed("db.price_history", logger=log), self._session() as session:
             rows = session.execute(
                 select(PriceHistory.price, PriceHistory.seen_at)
                 .where(PriceHistory.item_id == item_id)
@@ -225,7 +233,7 @@ class SupabaseStorage:
     def blocked_proxies(self, ttl: float) -> set[str]:
         """Адреса, заблокированные не позже ``ttl`` секунд назад."""
         cutoff = datetime.now(UTC) - timedelta(seconds=float(ttl))
-        with self._session() as session:
+        with timed("db.blocked_proxies", logger=log), self._session() as session:
             rows = (
                 session.execute(
                     select(ProxyCooldown.proxy).where(ProxyCooldown.blocked_at > cutoff)
