@@ -7,6 +7,30 @@
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-20
+
+### Fixed (устойчивость сетевого слоя)
+
+- Тулзы больше не висят по четверти часа на блокировке IP. `HttpClient.get`
+  выбирал весь бюджет попыток даже когда `Proxy.rotate()` возвращал `False` —
+  то есть менять выходной адрес было не на что — и досыпал 903 с backoff по
+  одному и тому же 403. Теперь цикл обрывается сразу; транспортные ошибки
+  (таймаут, обрыв TCP) по-прежнему повторяются, потому что лечатся повтором,
+  а не сменой IP.
+- `get_listing` следует SSR-редиректу на канонический URL. Раньше тулза била
+  `client.get` напрямую и на странице-редиректе отвечала «не удалось извлечь
+  данные объявления».
+- `AVITO_MAX_ROTATE_ATTEMPTS=0` даёт контрактную ошибку вместо
+  `UnboundLocalError`.
+
+### Changed (устойчивость сетевого слоя)
+
+- Дефолт `AVITO_MAX_ROTATE_ATTEMPTS` — 5 вместо 18. Худший случай ожидания:
+  903 с → 123 с. Чистый IP, не найденный за пять ротаций, не найдётся и за
+  восемнадцать.
+- Обход SSR-редиректов вынесен в `_follow()`; `fetch_catalog` стал обёрткой
+  над ним, добавлена `fetch_page()` для страниц объявлений.
+
 ### Changed (разворот к полнофункциональному парсингу каталога Avito)
 
 - Проект переориентирован с официального API `api.avito.ru` на полнофункциональный
@@ -93,5 +117,6 @@
 - Skills и тулзы MCP-сервера — заготовки; рабочая логика в разработке (см.
   [`docs/roadmap.md`](docs/roadmap.md)).
 
-[Unreleased]: https://github.com/evgenygurin/avito-mcp-plugin/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/evgenygurin/avito-mcp-plugin/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/evgenygurin/avito-mcp-plugin/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/evgenygurin/avito-mcp-plugin/releases/tag/v0.1.0
