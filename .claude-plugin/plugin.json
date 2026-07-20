@@ -3,7 +3,7 @@
   "name": "avito-mcp-plugin",
   "displayName": "Avito MCP Plugin",
   "description": "Переносимый плагин для AI-агентов: skills + встроенный MCP-сервер (FastMCP v3) для парсинга и мониторинга Avito — поиск объявлений, отслеживание цен, экспорт, уведомления",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "evgenygurin",
     "email": "e.a.gurin@outlook.com"

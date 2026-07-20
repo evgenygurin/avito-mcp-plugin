@@ -2,7 +2,7 @@
   "name": "avito-mcp-plugin",
   "displayName": "Avito MCP Plugin",
   "description": "Skills + встроенный MCP-сервер (FastMCP v3) для парсинга и мониторинга Avito: поиск объявлений, отслеживание цен, уведомления",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "evgenygurin",
     "email": "e.a.gurin@outlook.com"

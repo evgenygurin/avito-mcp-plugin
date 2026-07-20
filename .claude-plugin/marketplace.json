@@ -9,7 +9,7 @@
     {
       "name": "avito-mcp-plugin",
       "description": "Переносимый плагин для AI-агентов: skills + встроенный MCP-сервер (FastMCP v3) для парсинга и мониторинга Avito",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "source": "./",
       "category": "development",
       "keywords": [
