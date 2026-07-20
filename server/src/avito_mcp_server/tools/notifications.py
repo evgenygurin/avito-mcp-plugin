@@ -60,4 +60,8 @@ def register(mcp: FastMCP) -> None:
                 detail=report.detail,
             )
 
-        return await run_blocking(_run, failure="не удалось отправить уведомление")
+        return await run_blocking(
+            _run,
+            failure="не удалось отправить уведомление",
+            operation="send_notification",
+        )

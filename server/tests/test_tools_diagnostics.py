@@ -7,11 +7,10 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
 import avito_mcp_server.tools.diagnostics as diag_mod
-from avito_mcp_server.proxies.proxy import NoProxy
+from fakes import FakeHttpClient
 
 
-class _FakeClient:
-    proxy = NoProxy()
+class _FakeClient(FakeHttpClient):
     cookies = None
 
 
@@ -79,7 +78,7 @@ async def test_check_proxy_health_probes_whole_pool(monkeypatch) -> None:
 
     pool = ProxyPool(["user:secret@h1:1", "user:secret@h2:2"])
 
-    class _Client:
+    class _Client(FakeHttpClient):
         proxy = pool
         cookies = None
 
@@ -110,7 +109,7 @@ async def test_probe_verdicts_stick_to_their_own_proxy(monkeypatch) -> None:
 
     pool = ProxyPool(["dead:1", "alive:2"])
 
-    class _Client:
+    class _Client(FakeHttpClient):
         proxy = pool
         cookies = None
 

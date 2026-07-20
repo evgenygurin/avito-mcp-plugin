@@ -41,4 +41,6 @@ def register(mcp: FastMCP) -> None:
                 count=len(items),
             )
 
-        return await run_blocking(_run, failure="не удалось экспортировать")
+        return await run_blocking(
+            _run, failure="не удалось экспортировать", operation="export_listings"
+        )

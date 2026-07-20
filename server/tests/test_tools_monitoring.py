@@ -6,7 +6,7 @@ from fastmcp.exceptions import ToolError
 
 import avito_mcp_server.tools.catalog as catalog_mod
 import avito_mcp_server.tools.monitoring as mon_mod
-from fakes import FakeStorage
+from fakes import FakeHttpClient, FakeStorage
 
 CATALOG = {
     "items": [
@@ -41,7 +41,7 @@ def _mcp() -> FastMCP:
     return m
 
 
-class _FakeClient:
+class _FakeClient(FakeHttpClient):
     pass
 
 

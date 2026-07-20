@@ -113,10 +113,16 @@ async def get_listing(id_or_url: str, ctx: Context, with_views: bool = False) ->
 
 ### HTTP (`curl_cffi`)
 
-`impersonate` ∈ {chrome, edge, safari}, случайный UA, прокси, follow-редирект,
-`find_json_on_page`. **Наше улучшение retry-логики:** вместо одной ротации IP —
-**rotate-until-clean** (до `AVITO_MAX_ROTATE_ATTEMPTS`, дефолт 18); это чинит
-типичный дефект наивной retry-логики (одна ротация → сдача) на смешанном пуле.
+`impersonate` ∈ {chrome, safari} (`edge` исключён: curl_cffi резолвит его в
+отпечаток 2022 года), прокси, follow-редирект. **Наше улучшение retry-логики:**
+вместо одной ротации IP — **rotate-until-clean** (до
+`AVITO_MAX_ROTATE_ATTEMPTS`, дефолт 5); это чинит типичный дефект наивной
+retry-логики (одна ротация → сдача) на смешанном пуле.
+
+TLS-сессия переиспользуется между запросами (новая на каждый стоила ~134 мс
+даже без прокси) и принудительно закрывается после ротации IP — иначе
+keep-alive остался бы на прежнем, прожжённом адресе. Отсюда контракт:
+`with build_http_client() as client`.
 
 ### Переменные окружения
 
@@ -132,8 +138,33 @@ async def get_listing(id_or_url: str, ctx: Context, with_views: bool = False) ->
 | `AVITO_TG_TOKEN`, `AVITO_TG_CHAT_IDS` | Telegram-уведомления |
 | `AVITO_VK_TOKEN`, `AVITO_VK_USER_IDS` | VK-уведомления |
 | `AVITO_SUPABASE_DSN` | DSN Postgres проекта Supabase (dedup + история цены + cooldown) |
-| `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций (дефолт 18) |
+| `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций (дефолт 5) |
+| `AVITO_ROTATE_WAIT` | стартовая пауза после смены IP, сек (дефолт 3.0) |
+| `AVITO_REQUEST_BUDGET` | потолок времени на клиента, сек (дефолт 120, ×страницы) |
+| `LOG_LEVEL` | уровень логов сервера (дефолт `INFO`), вывод в stderr |
+| `AVITO_LOG_FILE` | дублировать логи в файл (ротация 5 МБ × 3) |
 | `AVITO_SKILLS_DIR`, `CLAUDE_PLUGIN_ROOT` | резолв каталога `skills/` |
+
+## Наблюдаемость: куда ушло время
+
+Логи идут в **stderr** (stdout занят JSON-RPC при stdio-транспорте) и,
+если задан `AVITO_LOG_FILE`, в файл. Каждый вызов тулзы заканчивается сводкой
+фаз — по ней видно, что именно было медленным:
+
+```text
+check_proxy_health total=81.682s backoff.sleep=54.009s×4 proxy.rotate=21.263s×6
+  http.request=4.264s×6 config.proxy=0.059s×1 cookies.get=0.000s×2
+```
+
+Замер 2026-07-20 на мобильном прокси: сеть Avito отвечает за 0.6–0.8 с, а
+95% времени вызова — ожидание (пауза после блокировки и смена IP через
+кабинет провайдера). Оптимизировать имеет смысл `AVITO_ROTATE_WAIT` и
+`AVITO_MAX_ROTATE_ATTEMPTS`, а не код парсинга.
+
+Дорогие операции оборачиваются в `timing.timed(...)`; копилку фаз заводит
+`tools/execution.run_blocking` и передаёт вглубь через `contextvars`. Длинные
+обходы отчитываются о прогрессе (`progress.report`) — клиент видит
+`страница 3/10`, а не тишину.
 
 ## Тестирование (in-memory)
 

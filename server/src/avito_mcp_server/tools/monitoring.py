@@ -114,7 +114,12 @@ def register(mcp: FastMCP) -> None:
             db.upsert_seen_many(_to_rows(listings))
             return ScanResult(items=items)
 
-        result = await run_blocking(_run, failure="не удалось выполнить сканирование")
+        result = await run_blocking(
+            _run,
+            failure="не удалось выполнить сканирование",
+            operation="scan_new_listings",
+            ctx=ctx,
+        )
 
         await ctx.info(
             f"найдено {result.new_count} новых, {result.dropped_count} подешевевших"
@@ -151,4 +156,8 @@ def register(mcp: FastMCP) -> None:
             ]
             return PriceHistoryResult(listing_id=item_id, history=history)
 
-        return await run_blocking(_run, failure="не удалось получить историю цены")
+        return await run_blocking(
+            _run,
+            failure="не удалось получить историю цены",
+            operation="get_price_history",
+        )

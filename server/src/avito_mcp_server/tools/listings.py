@@ -40,14 +40,17 @@ def register(mcp: FastMCP) -> None:
         await ctx.info(f"get_listing: {url}")
 
         def _run() -> Listing:
-            client = build_http_client()
-            # fetch_page, а не client.get: карточка объявления тоже приходит
-            # SSR-редиректом на канонический URL, и без хопа парсер разбирает
-            # страницу-редирект вместо объявления.
-            resp = fetch_page(client, url)
+            # with: клиент держит открытое соединение (см. HttpClient._get_session).
+            with build_http_client() as client:
+                # fetch_page, а не client.get: карточка объявления тоже приходит
+                # SSR-редиректом на канонический URL, и без хопа парсер разбирает
+                # страницу-редирект вместо объявления.
+                resp = fetch_page(client, url)
             listing = parse_listing_detail(resp.text, with_views=with_views)
             if listing is None:
                 raise RuntimeError("не удалось извлечь данные объявления из страницы")
             return listing
 
-        return await run_blocking(_run, failure="не удалось получить объявление")
+        return await run_blocking(
+            _run, failure="не удалось получить объявление", operation="get_listing"
+        )

@@ -7,14 +7,12 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
 import avito_mcp_server.tools.listings as listings_mod
-from avito_mcp_server.proxies.proxy import NoProxy
+from fakes import FakeHttpClient
 
 FIX = Path(__file__).parent / "fixtures"
 
 
-class _FakeHttpClient:
-    proxy = NoProxy()
-
+class _FakeHttpClient(FakeHttpClient):
     def get(self, url: str, max_attempts: int | None = None):
         html = (FIX / "listing_detail.html").read_text(encoding="utf-8")
         from unittest.mock import Mock
@@ -103,9 +101,7 @@ async def test_get_listing_follows_ssr_redirect(monkeypatch) -> None:
     pages = {"https://www.avito.ru/x": redirect}
     seen: list[str] = []
 
-    class _Redirecting:
-        proxy = NoProxy()
-
+    class _Redirecting(FakeHttpClient):
         def get(self, url: str, max_attempts: int | None = None):
             seen.append(url)
             resp = Mock()

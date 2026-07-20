@@ -45,12 +45,15 @@ Avito по-прежнему отдаёт 403/429 после 2–3 запросо
 | `AVITO_VK_TOKEN`, `AVITO_VK_USER_IDS` | VK-уведомления |
 | `AVITO_SUPABASE_DSN` | DSN Postgres проекта Supabase — **единственное** хранилище |
 | `AVITO_MAX_ROTATE_ATTEMPTS` | лимит ротаций IP (дефолт 5; больше — линейный рост ожидания) |
+| `AVITO_ROTATE_WAIT` | стартовая пауза после смены IP, сек (дефолт 3.0; удваивается до 60) |
+| `AVITO_REQUEST_BUDGET` | потолок времени на HTTP-клиент, сек (дефолт 120, ×страницы; 0 — снять) |
 | `AVITO_MPS_API_TOKEN` | Bearer-токен API mobileproxy.space (mpsapi.com) — включает автоэскалацию прокси |
 | `AVITO_PROXY_ID` | ID прокси в кабинете mobileproxy.space (`command=get_my_proxy`) — нужен вместе с `AVITO_MPS_API_TOKEN` |
 | `AVITO_MPS_OPERATOR` | оператор для эскалации (дефолт `megafone`) |
 | `AVITO_SKILLS_DIR` | явный override каталога skills |
 | `CLAUDE_PLUGIN_ROOT` | резолв `skills/` при установке плагина (`${CLAUDE_PLUGIN_ROOT}/skills`) |
-| `LOG_LEVEL` | объявлена в `.env.example`, но **пока нигде не читается** (аспирационная) |
+| `LOG_LEVEL` | уровень логов сервера (`DEBUG`/`INFO`/…, дефолт `INFO`); вывод — в stderr |
+| `AVITO_LOG_FILE` | дублировать логи в файл (ротация 5 МБ × 3); пусто — только stderr |
 
 ## Структура
 
@@ -128,6 +131,30 @@ avito_mcp_server/
   `asyncio.to_thread` + `try/except` в новой тулзе не пиши.
 - Статус страницы — `parser.PageKind` (`StrEnum`), а не строковый литерал; сравнения
   вида `kind == "ok"` продолжают работать, но ветвиться лучше по членам enum.
+- **Наблюдаемость обязательна для дорогих операций.** Всё, что ходит в сеть, в
+  базу или спит, оборачивается в `timing.timed("фаза", logger=log, …)`:
+  `tools/execution.run_blocking` заводит копилку на вызов (через `contextvars`,
+  поэтому передавать её аргументом не надо) и пишет в лог одну сводную строку
+  вида `search_listings total=42.1s page.fetch=38.0s×3 backoff.sleep=27.0s×3`.
+  Свой `time.perf_counter()` вокруг блока не пиши. Работа в СВОЁМ пуле потоков
+  (`ThreadPoolExecutor`) контекст не наследует — там копилка передаётся явно
+  через `timing.track()` (пример — `tools/diagnostics.probe_pool`).
+- **Длинные операции отчитываются о прогрессе** через `progress.report(сделано,
+  всего, сообщение)`. Мост поток → петля событий живёт в `run_blocking(ctx=ctx)`;
+  движок про MCP не знает, вне тулзы отчёт — пустышка.
+- **У движка есть свой дедлайн, и он обязателен.** `timeout` тулзы работу НЕ
+  останавливает: `asyncio.to_thread` не отменяется, поток продолжает жечь
+  платные ротации уже после отказа клиенту. Останавливается движок сам —
+  по `AVITO_REQUEST_BUDGET` (`HttpClient.budget`). Любой новый цикл повторов
+  обязан сверяться с `_out_of_budget()`, иначе вложенные лимиты снова
+  перемножатся (попытки × обновления токена × хопы × эскалация) и тулза
+  «зависнет».
+- **`HttpClient` держит TLS-соединение** и переиспользует его между запросами
+  (новая сессия на запрос стоила ~134 мс даже без прокси). Отсюда два правила:
+  клиент используется через `with build_http_client() as client`, а после
+  ротации IP сессия обязана умереть — иначе keep-alive останется на прожжённом
+  адресе и ротация станет фикцией (`HttpClient._drop_session`).
+
 - Расширяемые точки устроены реестрами, а не `if/elif`: `export.exporter._EXPORTERS`,
   `notifications.sender._NOTIFIERS`, `cookies.factory._PROVIDERS`,
   `filters.filters._CRITERIA`. Новый формат/канал/провайдер/критерий — запись в реестр.
@@ -230,7 +257,10 @@ SemVer синхронно в **пяти** манифестах: `.claude-plugin/
 ## Gotchas
 
 - **`.env` не читается автоматически** — нет `load_dotenv`; передавай env через шелл.
-- **`LOG_LEVEL` мёртвая** — объявлена в `.env.example`, но сервер её не читает.
+- **Логи только в stderr.** При stdio-транспорте stdout занят JSON-RPC: любая
+  строка туда рвёт сессию. `logging_setup.setup_logging()` вешает хендлеры на
+  логгер `avito_mcp_server` (не root) и снимает `propagate` — тесты с `caplog`
+  обязаны вернуть его (`monkeypatch.setattr(logger, "propagate", True)`).
 - **`AVITO_SKILLS_DIR`**: если путь задан, но не каталог → раздача skills молча
   отключается (fallback на `CLAUDE_PLUGIN_ROOT` **не** срабатывает при override).
 - **Локальная установка плагина** (`claude plugin marketplace add <локальный путь>`)
