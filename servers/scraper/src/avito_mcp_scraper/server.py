@@ -1,22 +1,25 @@
-"""FastMCP-инстанс scraper-сервера (скелет Фазы 1).
+"""FastMCP-инстанс scraper-сервера: движок парсинга (stateless).
 
-Предоставляет минимальный инструмент ``status`` (роль и готовность). Движок
-парсинга (фаза 2) добавляется без изменения контракта gateway.
+Scraper — самостоятельный сервер без хранилища: http/cookies/proxies/parser/
+filters + тулзы поиска/чтения/диагностики. Gateway композирует его и берёт
+мониторинг/экспорт/уведомления (которые перенесёт в Фазы 3–4).
 """
 
 from __future__ import annotations
 
 from fastmcp import FastMCP
 
-from avito_mcp_shared.roles import ServerRole
+from .logging_setup import setup_logging
+from .tools import diagnostics, listings, search
+
+setup_logging()
 
 mcp = FastMCP("avito-mcp-scraper")
 
-
-@mcp.tool
-async def status() -> dict[str, str]:
-    """Возвращает роль и готовность scraper-сервера."""
-    return {"role": ServerRole.SCRAPER.value, "status": "ok"}
+# Парсинг-тулзы поверх движка (stateless — без записи в БД).
+search.register(mcp)
+listings.register(mcp)
+diagnostics.register(mcp)
 
 
 def main() -> None:

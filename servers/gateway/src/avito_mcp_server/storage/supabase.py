@@ -18,7 +18,7 @@ from sqlalchemy import Engine, bindparam, create_engine, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
-from ..timing import timed
+from avito_mcp_scraper.timing import timed
 from .models import PriceHistory, ProxyCooldown, SeenItem
 from .rows import SeenRow
 

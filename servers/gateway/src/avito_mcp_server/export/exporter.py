@@ -12,7 +12,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-from ..models import Listing
+from avito_mcp_scraper.models import Listing
 
 # Формат выгрузки. Literal — контракт MCP-схемы тулзы export_listings; список
 # значений и реестр стратегий ниже проверяются на совпадение тестом.

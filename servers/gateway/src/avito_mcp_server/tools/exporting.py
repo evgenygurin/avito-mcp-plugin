@@ -7,8 +7,8 @@ from mcp.types import ToolAnnotations
 
 from ..export.exporter import ExportFormat
 from ..export.exporter import export_listings as do_export
-from ..models import ExportResult, Listing
-from .execution import run_blocking
+from avito_mcp_scraper.models import ExportResult, Listing
+from avito_mcp_scraper.tools.execution import run_blocking
 
 
 def register(mcp: FastMCP) -> None:

@@ -1,9 +1,13 @@
 """Интерфейсы хранилища для потребителей (DIP).
 
-Пул прокси и тулзы зависят не от конкретного ``SupabaseStorage``, а от узкого
+Тулзы мониторинга зависят не от конкретного ``SupabaseStorage``, а от узкого
 протокола с теми методами, которые им действительно нужны (ISP). Так тестовый
 двойник (``tests/fakes.FakeStorage``) — не «утиная» подмена наугад, а
 проверяемая типами реализация контракта.
+
+Протокол ``ProxyCooldownStore`` (память о выжженных прокси) вынесен в scraper
+(``avito_mcp_scraper.proxies.proxy``): это DIP-контракт движка, gateway не
+навязывает scraper-серверу свой storage.
 """
 
 from __future__ import annotations
@@ -12,19 +16,6 @@ from collections.abc import Iterable, Sequence
 from typing import Protocol, runtime_checkable
 
 from .rows import SeenRow
-
-
-@runtime_checkable
-class ProxyCooldownStore(Protocol):
-    """Память о выжженных прокси между запусками."""
-
-    def mark_proxy_blocked(self, proxy: str) -> None:
-        """Запомнить адрес, отдавший блокировку."""
-        ...
-
-    def blocked_proxies(self, ttl: float) -> set[str]:
-        """Адреса, заблокированные не позже ``ttl`` секунд назад."""
-        ...
 
 
 @runtime_checkable

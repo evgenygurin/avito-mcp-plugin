@@ -3,4 +3,4 @@
 Публичная точка входа — :func:`avito_mcp_server.server.main`.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"

@@ -1,6 +1,6 @@
 """Хранилище парсера: Postgres (Supabase) через SQLAlchemy ORM."""
 
-from .base import ListingStore, ProxyCooldownStore
+from .base import ListingStore
 from .models import Base, PriceHistory, ProxyCooldown, SeenItem
 from .rows import SeenRow
 from .supabase import SupabaseStorage, normalize_dsn
@@ -10,7 +10,6 @@ __all__ = [
     "ListingStore",
     "PriceHistory",
     "ProxyCooldown",
-    "ProxyCooldownStore",
     "SeenItem",
     "SeenRow",
     "SupabaseStorage",
