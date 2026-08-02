@@ -20,7 +20,7 @@ ENGINE_TOOLS = {
     "send_notification",
 }
 
-PROXIED_TOOLS = {"db_status", "notify_status"}
+PROXIED_TOOLS = {"db_status", "notify_status", "notify_send_notification"}
 
 
 async def test_gateway_hosts_engine_and_proxied_components() -> None:
@@ -30,6 +30,16 @@ async def test_gateway_hosts_engine_and_proxied_components() -> None:
         assert PROXIED_TOOLS <= names, (
             f"нет проксированных скелетов: {PROXIED_TOOLS - names}"
         )
+
+
+async def test_gateway_exposes_clean_send_via_notify_namespace() -> None:
+    # Фаза 4: тулза уведомлений приходит из notify — и под своим именем
+    # (импорт), и под прокси-неймспейсом `notify_*`.
+    async with Client(build_gateway()) as client:
+        await client.call_tool("notify_status", {})
+        names = {t.name for t in await client.list_tools()}
+        assert "send_notification" in names
+        assert "notify_send_notification" in names
 
 
 async def test_gateway_proxies_component_call() -> None:
