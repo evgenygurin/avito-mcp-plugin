@@ -8,7 +8,7 @@ import pytest
 
 from io import BytesIO
 
-from avito_mcp_server.export.exporter import (
+from avito_mcp_db.export.exporter import (
     export_listings,
     to_csv_str,
     to_json_str,
@@ -96,7 +96,7 @@ class TestCsv:
 def test_header_and_rows_stay_aligned(listings: list[Listing]) -> None:
     # Заголовок и значения строятся из одного описания колонок: разъехавшись,
     # они молча сдвинули бы все столбцы в выгрузке (цена под адресом и т.п.).
-    from avito_mcp_server.export.exporter import _header, _listings_to_rows
+    from avito_mcp_db.export.exporter import _header, _listings_to_rows
 
     rows = _listings_to_rows(listings)
     assert rows, "фикстура должна давать хотя бы одну строку"
@@ -174,6 +174,6 @@ def test_registry_matches_declared_formats() -> None:
     # Разъехавшись, они дают тулзу, обещающую формат, которого нет.
     from typing import get_args
 
-    from avito_mcp_server.export.exporter import _EXPORTERS, ExportFormat
+    from avito_mcp_db.export.exporter import _EXPORTERS, ExportFormat
 
     assert set(get_args(ExportFormat)) == set(_EXPORTERS)

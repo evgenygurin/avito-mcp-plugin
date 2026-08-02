@@ -4,7 +4,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
-import avito_mcp_server.tools.exporting as exp_mod
+import avito_mcp_db.tools.exporting as exp_mod
 
 
 def _mcp() -> FastMCP:

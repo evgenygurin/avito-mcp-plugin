@@ -17,8 +17,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, text
 
-from avito_mcp_server.storage.models import PriceHistory, ProxyCooldown, SeenItem
-from avito_mcp_server.storage.supabase import SeenRow, SupabaseStorage, normalize_dsn
+from avito_mcp_db.storage.models import PriceHistory, ProxyCooldown, SeenItem
+from avito_mcp_db.storage.supabase import SeenRow, SupabaseStorage, normalize_dsn
 
 DSN = os.getenv("AVITO_SUPABASE_DSN", "").strip()
 requires_db = pytest.mark.skipif(not DSN, reason="AVITO_SUPABASE_DSN не задан")
@@ -242,7 +242,7 @@ class TestEngineSetup:
     def test_engine_is_reused_between_instances(self, monkeypatch) -> None:
         # build_storage() зовётся на каждый вызов тулзы: без кеша каждый раз
         # создавался бы новый пул соединений, который никто не закрывает.
-        import avito_mcp_server.storage.supabase as mod
+        import avito_mcp_db.storage.supabase as mod
 
         mod.reset_engine_cache()
         created: list[str] = []
@@ -256,7 +256,7 @@ class TestEngineSetup:
         assert a.engine is b.engine
 
     def test_engine_options_survive_idle_and_pooler(self, monkeypatch) -> None:
-        import avito_mcp_server.storage.supabase as mod
+        import avito_mcp_db.storage.supabase as mod
 
         mod.reset_engine_cache()
         captured: dict = {}

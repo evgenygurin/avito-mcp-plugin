@@ -1,17 +1,23 @@
 [project]
 name = "avito-mcp-db"
-version = "0.1.0"
-description = "DB-сервер avito-mcp (скелет Фазы 1): хранилище (PostgreSQL)"
+version = "0.4.0"
+description = "DB-сервер avito-mcp (Фаза 3): единственный stateful-сервер (Supabase, история цен, экспорт)"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "evgenygurin", email = "e.a.gurin@outlook.com" }]
 dependencies = [
     "fastmcp>=3.0.0,<4",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "openpyxl>=3.1.5",
+    # Члены uv-workspace: общие утилиты; scraper даёт модели и run_blocking.
     "avito-mcp-shared",
+    "avito-mcp-scraper",
 ]
 
 [tool.uv.sources]
 avito-mcp-shared = { workspace = true }
+avito-mcp-scraper = { workspace = true }
 
 [project.scripts]
 avito-mcp-db = "avito_mcp_db.server:main"
@@ -26,6 +32,7 @@ dev = [
     "pytest-asyncio",
     "ruff",
     "mypy",
+    "types-openpyxl>=3.1.5.20260518",
 ]
 
 [tool.pytest.ini_options]

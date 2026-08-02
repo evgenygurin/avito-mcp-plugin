@@ -1,66 +1,25 @@
-"""MCP-тулзы мониторинга: scan_new_listings (dedup + цена) + get_price_history."""
+"""Gateway-тулзы мониторинга: scan_new_listings + история цены (делегация в db).
+
+Gateway не знает про БД: собирает каталог через scraper-движок и отдаёт
+результат на персистент в db (``persist_scan`` находится в db). Тулуна
+``get_price_history`` gateway тоже регистрирует из db (внешний контракт).
+"""
 
 from __future__ import annotations
-
-import typing as t
 
 from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
 from avito_mcp_scraper.filters.filters import FilterSpec, PageCount
-from avito_mcp_scraper.models import (
-    Listing,
-    PriceHistoryResult,
-    PricePoint,
-    ScanItem,
-    ScanResult,
-)
-from avito_mcp_scraper.proxies.proxy import ProxyCooldownStore
+from avito_mcp_scraper.models import ScanResult
 from avito_mcp_scraper.tools.catalog import collect_listings
 from avito_mcp_scraper.tools.execution import run_blocking
-from avito_mcp_scraper.utils import extract_listing_id
 
-from ..config import build_storage
-from ..storage import SeenRow
-
-
-def _changes(listings: list[Listing], seen: dict[int, float | None]) -> list[ScanItem]:
-    """Отобрать новые и подешевевшие объявления относительно снимка хранилища.
-
-    Наличие id в ``seen`` = «видели раньше», значение = прошлая цена; без этого
-    различия объявления без цены считались бы новыми при каждом скане.
-    Чистая функция — сравнение проверяется без похода в базу.
-    """
-    items: list[ScanItem] = []
-    for listing in listings:
-        if listing.id not in seen:
-            items.append(ScanItem(listing=listing, is_new=True))
-            continue
-        prev_price = seen[listing.id]
-        if (
-            prev_price is not None
-            and listing.price is not None
-            and listing.price < prev_price
-        ):
-            items.append(
-                ScanItem(
-                    listing=listing,
-                    is_new=False,
-                    price_delta=prev_price - listing.price,
-                )
-            )
-    return items
-
-
-def _to_rows(listings: list[Listing]) -> list[SeenRow]:
-    return [
-        SeenRow(id=item.id, url=item.url, title=item.title, price=item.price)
-        for item in listings
-    ]
+from avito_mcp_db.tools.monitoring import persist_scan
 
 
 def register(mcp: FastMCP) -> None:
-    """Зарегистрировать тулзы мониторинга на инстансе FastMCP."""
+    """Зарегистрировать gateway-тулзу ``scan_new_listings`` на инстансе."""
 
     @mcp.tool(
         annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
@@ -82,10 +41,10 @@ def register(mcp: FastMCP) -> None:
         """Собрать новые и подешевевшие объявления (мониторинг-примитив).
 
         Use when нужно отследить новые объявления или снижение цены по регулярному
-        поиску (вызывается внешним планировщиком — агентом/cron). Сверяет свежий
-        каталог с хранилищем в Postgres (``AVITO_SUPABASE_DSN``). Возвращает
-        только новые объявления и те, что подешевели; неизменившиеся пропускает.
-        Требует ``AVITO_SUPABASE_DSN``.
+        поиску (вызывается внешним планировщиком — агентом/cron). Собирает свежий
+        каталог (scraper) и отдаёт его на персистент в db (Postgres-хранилище),
+        где сверяются dedup и история цены. Возвращает только новые объявления
+        и те, что подешевели; неизменившиеся пропускает.
 
         Args:
             url: ссылка на каталог Avito (категория/город).
@@ -114,23 +73,12 @@ def register(mcp: FastMCP) -> None:
         await ctx.info(f"scan_new_listings: {url}")
 
         def _run() -> ScanResult:
-            db = build_storage()
-            listings = collect_listings(
-                url,
-                spec,
-                pages,
-                # Память о выженных прокси: scraper stateless, но gateway не
-                # хочет терять её между запусками — передаём своё хранилище
-                # (SupabaseStorage реализует и ``ListingStore``, и cooldown).
-                cooldown_store=t.cast(ProxyCooldownStore, db),
-            )
-            # Одна выборка на всю страницу вместо запроса на объявление: база
-            # облачная, и сотня round-trip'ов занимала больше времени, чем сам
-            # парсинг.
-            seen = db.fetch_seen([listing.id for listing in listings])
-            items = _changes(listings, seen)
-            db.upsert_seen_many(_to_rows(listings))
-            return ScanResult(items=items)
+            # Память о выжженных прокси между запусками (cooldown_store) — Фаза 2
+            # задокументировала отклонение переходного периода: scraper stateless,
+            # а своё хранилище gateway больше не держит (оно ушло в db). Вернётся
+            # с авто-фиксом Фазы 4, когда gateway будет звать db и cooldown.
+            listings = collect_listings(url, spec, pages)
+            return persist_scan(listings)
 
         result = await run_blocking(
             _run,
@@ -143,39 +91,3 @@ def register(mcp: FastMCP) -> None:
             f"найдено {result.new_count} новых, {result.dropped_count} подешевевших"
         )
         return result
-
-    @mcp.tool(
-        annotations=ToolAnnotations(
-            readOnlyHint=True, idempotentHint=True, openWorldHint=False
-        ),
-    )
-    async def get_price_history(
-        listing_id: str,
-        ctx: Context,
-    ) -> PriceHistoryResult:
-        """Получить историю цены объявления из хранилища.
-
-        Use when нужна динамика цены конкретного объявления (было/стало).
-        Принимает числовой id объявления Avito или его URL. Возвращает
-        хронологию цены отсортированную от свежей к старой. История
-        появляется только после того, как объявление попадало в
-        ``scan_new_listings``. Требует ``AVITO_SUPABASE_DSN``.
-        """
-        # extract_listing_id понимает и URL, и голые цифры — отдельной ветки
-        # под каждый вид ввода не нужно.
-        item_id = extract_listing_id(listing_id)
-        await ctx.info(f"get_price_history: {item_id}")
-
-        def _run() -> PriceHistoryResult:
-            db = build_storage()
-            rows = db.get_price_history(item_id)
-            history = [
-                PricePoint(price=price, seen_at=seen_at) for price, seen_at in rows
-            ]
-            return PriceHistoryResult(listing_id=item_id, history=history)
-
-        return await run_blocking(
-            _run,
-            failure="не удалось получить историю цены",
-            operation="get_price_history",
-        )

@@ -1,8 +1,9 @@
 """FastMCP-сервер avito-mcp-server (gateway-композиция).
 
-Компонует 7 MCP-тулз: 3 тулзы поиска/чтения/диагностики из scraper-движка
-(stateless) + 4 gateway-тулзы (мониторинг/экспорт/уведомления) и раздачу
-``skills/`` по MCP. См. docs/mcp-server.md.
+Компонует MCP-тулзы: 3 тулзы поиска/чтения/диагностики из scraper-движка
+(stateless) + scan_new_listings (обход scraper → персистент в db) + делегированные
+из db тулзы (get_price_history, export_listings) + send_notification (остаётся
+в gateway до Фазы 4) и раздачу ``skills/`` по MCP. См. docs/mcp-server.md.
 """
 
 from __future__ import annotations
@@ -11,9 +12,11 @@ from fastmcp import FastMCP
 
 from avito_mcp_scraper.logging_setup import setup_logging as setup_scraper_logging
 from avito_mcp_scraper.tools import diagnostics, listings, search
+from avito_mcp_db.tools import exporting as db_exporting
+from avito_mcp_db.tools.monitoring import register_history
 
 from .skills_provider import register_skills
-from .tools import exporting, monitoring, notifications
+from .tools import monitoring, notifications
 
 # До регистрации тулз: иначе диагностика самой сборки (список прокси из
 # кабинета, подъём кук из кэша) осталась бы невидимой. Каждый вызов тулзы —
@@ -26,17 +29,19 @@ mcp = FastMCP("avito-mcp-server")
 
 
 def register_all(gw: FastMCP) -> None:
-    """Зарегистрировать все 7 тулз на переданном инстансе FastMCP."""
+    """Зарегистрировать все тулзы gateway на переданном инстансе FastMCP."""
     # Парсинг-тулзы (stateless) из scraper-движка.
     search.register(gw)
     listings.register(gw)
     diagnostics.register(gw)
 
-    # Мониторинг (состояние / история цены) поверх scraper-движка.
+    # Мониторинг: обход scraper + персистент в db (dedup/история цены).
     monitoring.register(gw)
+    # Внешний контракт истории цены и экспорт делегируются в db.
+    register_history(gw)
+    db_exporting.register(gw)
 
-    # Сайд-эффекты: экспорт и уведомления.
-    exporting.register(gw)
+    # Уведомления остаются в gateway (Фаза 4 её переносит в notify).
     notifications.register(gw)
 
     # Раздача skills/ по MCP (skill://<name>/…) — любому MCP-клиенту.

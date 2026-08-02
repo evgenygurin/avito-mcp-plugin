@@ -1,20 +1,15 @@
 [project]
 name = "avito-mcp-server"
-version = "0.3.0"
-description = "Gateway-сервер (FastMCP v3): композиция скаффолдинга avito-mcp + 7 тулз"
+version = "0.4.0"
+description = "Gateway-адapter (FastMCP v3): композиция движка scraper + делегация в db (Фаза 3)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "evgenygurin", email = "e.a.gurin@outlook.com" }]
 dependencies = [
     "fastmcp>=3.0.0,<4",
-    "httpx>=0.27",
-    "curl_cffi>=0.7",
-    "beautifulsoup4>=4.12",
-    "openpyxl>=3.1.5",
-    "sqlalchemy>=2.0",
-    "psycopg[binary]>=3.2",
-    # Члены uv-workspace: общие утилиты и скелеты серверов для композиции.
+    # Члены uv-workspace: тяжёлый движок парсинга (scraper), db-хранилище/экспорт,
+    # общие утилиты и скелет уведом provider.
     "avito-mcp-shared",
     "avito-mcp-scraper",
     "avito-mcp-db",
@@ -43,7 +38,6 @@ dev = [
     "pytest-asyncio",
     "ruff",
     "mypy",
-    "types-openpyxl>=3.1.5.20260518",
 ]
 
 [tool.pytest.ini_options]

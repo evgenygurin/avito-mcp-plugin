@@ -7,8 +7,8 @@ Postgres-хранилище (``build_storage``). Движковые тесты �
 
 import pytest
 
-from avito_mcp_server.config import build_storage
-from avito_mcp_server.storage.supabase import SupabaseStorage
+from avito_mcp_db.config import build_storage
+from avito_mcp_db.storage.supabase import SupabaseStorage
 
 
 def test_build_storage_returns_supabase(monkeypatch) -> None:

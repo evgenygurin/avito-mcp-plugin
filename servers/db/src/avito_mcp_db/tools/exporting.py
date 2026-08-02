@@ -1,14 +1,19 @@
-"""MCP-тулза экспорта объявлений в xlsx/json/csv."""
+"""MCP-тулза экспорта объявлений в xlsx/json/csv (db-сервер).
+
+Экспорт переехал в db из gateway (Фаза 3): он оперирует данными, которые db
+же и хранит/пишет.
+"""
 
 from __future__ import annotations
 
 from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
-from ..export.exporter import ExportFormat
-from ..export.exporter import export_listings as do_export
 from avito_mcp_scraper.models import ExportResult, Listing
 from avito_mcp_scraper.tools.execution import run_blocking
+
+from ..export.exporter import ExportFormat
+from ..export.exporter import export_listings as do_export
 
 
 def register(mcp: FastMCP) -> None:

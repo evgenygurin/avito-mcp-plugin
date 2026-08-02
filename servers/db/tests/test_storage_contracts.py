@@ -8,9 +8,9 @@
 
 from fakes import FakeStorage
 
-from avito_mcp_server.storage.base import ListingStore
+from avito_mcp_db.storage.base import ListingStore
 from avito_mcp_scraper.proxies.proxy import ProxyCooldownStore
-from avito_mcp_server.storage.supabase import SupabaseStorage
+from avito_mcp_db.storage.supabase import SupabaseStorage
 
 
 def test_fake_storage_implements_both_protocols() -> None:
