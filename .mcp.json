@@ -4,7 +4,7 @@
     "args": [
       "run",
       "--project",
-      "${CLAUDE_PLUGIN_ROOT}/server",
+      "${CLAUDE_PLUGIN_ROOT}/servers/gateway",
       "avito-mcp-server"
     ],
     "env": {

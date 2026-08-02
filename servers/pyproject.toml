@@ -1,0 +1,7 @@
+[tool.uv]
+# Рабочий корень avito-mcp-servers: каждый сервер — отдельный editable-член
+# uv-workspace, у каждого свой pyproject.toml. Сам корень — не пакет.
+package = false
+
+[tool.uv.workspace]
+members = ["gateway", "scraper", "db", "notify", "shared"]
