@@ -86,6 +86,27 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy src && uv run
 [`avito-scraping.md`](avito-scraping.md) и в скиле
 [`scraping-avito`](../skills/scraping-avito/SKILL.md).
 
+### Верификация контракта (Фаза 6, #19)
+
+После рефакторинга 7 тулз доступны через gateway под теми же именами —
+проверено `gateway/tests/test_tools_contract.py` + `test_gateway.py`.
+Проверенные сигнатуры (inputSchema, required-параметры):
+
+| Тулза | required | опции (props) |
+|---|---|---|
+| `search_listings` | `url` | include/exclude_keywords, seller_blacklist, price_min/max, geo, max_age, pages |
+| `get_listing` | `id_or_url` | with_views |
+| `check_proxy_health` | — | probe_url |
+| `scan_new_listings` | `url` | include/exclude_keywords, seller_blacklist, price_min/max, geo, max_age, pages |
+| `get_price_history` | `listing_id` | — |
+| `export_listings` | `items` | fmt, path |
+| `send_notification` | `message` | channel, targets |
+
+Прокси-скелеты db/notify монтируются под неймспейсами (`db_status`,
+`notify_status`, `notify_send_notification`, `db_export_listings`,
+`db_get_price_history`, `db_record_scan_result`); каноничные 7 имён — без
+префиксов.
+
 ## Переменные окружения
 
 Серверы **не** читают `.env` — env передаёт шелл/агент.
