@@ -158,11 +158,13 @@ dev = [
 
 [[package]]
 name = "avito-mcp-notify"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "notify" }
 dependencies = [
+    { name = "avito-mcp-scraper" },
     { name = "avito-mcp-shared" },
     { name = "fastmcp" },
+    { name = "httpx" },
 ]
 
 [package.dev-dependencies]
@@ -175,8 +177,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "avito-mcp-scraper", editable = "scraper" },
     { name = "avito-mcp-shared", editable = "shared" },
     { name = "fastmcp", specifier = ">=3.0.0,<4" },
+    { name = "httpx", specifier = ">=0.28" },
 ]
 
 [package.metadata.requires-dev]

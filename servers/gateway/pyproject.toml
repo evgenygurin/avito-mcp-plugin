@@ -1,6 +1,6 @@
 [project]
 name = "avito-mcp-server"
-version = "0.4.0"
+version = "0.5.0"
 description = "Gateway-адapter (FastMCP v3): композиция движка scraper + делегация в db (Фаза 3)"
 readme = "README.md"
 requires-python = ">=3.12"
