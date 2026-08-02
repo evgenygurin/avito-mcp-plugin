@@ -3,8 +3,8 @@
 import httpx
 import pytest
 
-from avito_mcp_server.notifications import sender
-from avito_mcp_server.notifications.sender import send_notification
+from avito_mcp_notify.notifications import sender
+from avito_mcp_notify.notifications.sender import send_notification
 
 
 class _FakeResponse:

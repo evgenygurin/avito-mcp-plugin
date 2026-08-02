@@ -1,7 +1,7 @@
-"""FastMCP-инстанс notify-сервера (скелет Фазы 1).
+"""FastMCP-инстанс notify-сервера (Фаза 4: уведомления).
 
-Предоставляет минимальный инструмент ``status`` (роль и готовность).
-Уведомления (фаза 4) добавляются без изменения контракта gateway.
+Предоставляет ``status`` (роль/готовность) и тулзу ``send_notification``
+(Telegram / VK, тот же контракт, что в gateway до Фазы 4).
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from fastmcp import FastMCP
 
 from avito_mcp_shared.roles import ServerRole
 
+from .tools.notifications import register as register_notifications
+
 mcp = FastMCP("avito-mcp-notify")
 
 
@@ -17,6 +19,9 @@ mcp = FastMCP("avito-mcp-notify")
 async def status() -> dict[str, str]:
     """Возвращает роль и готовность notify-сервера."""
     return {"role": ServerRole.NOTIFY.value, "status": "ok"}
+
+
+register_notifications(mcp)
 
 
 def main() -> None:

@@ -2,8 +2,8 @@
 
 from fastmcp import Client, FastMCP
 
-import avito_mcp_server.tools.notifications as notif_mod
-from avito_mcp_server.notifications.sender import DeliveryReport
+import avito_mcp_notify.tools.notifications as notif_mod
+from avito_mcp_notify.notifications.sender import DeliveryReport
 
 
 def _mcp() -> FastMCP:

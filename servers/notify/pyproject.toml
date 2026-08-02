@@ -1,17 +1,21 @@
 [project]
 name = "avito-mcp-notify"
-version = "0.1.0"
-description = "Notify-сервер avito-mcp (скелет Фазы 1): уведомления (Telegram/VK)"
+version = "0.5.0"
+description = "Notify-сервер avito-mcp (Фаза 4): уведомления (Telegram/VK)"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "evgenygurin", email = "e.a.gurin@outlook.com" }]
 dependencies = [
     "fastmcp>=3.0.0,<4",
+    "httpx>=0.28",
+    # Члены uv-workspace: общие утилиты; scraper даёт run_blocking и аннотации тулз.
     "avito-mcp-shared",
+    "avito-mcp-scraper",
 ]
 
 [tool.uv.sources]
 avito-mcp-shared = { workspace = true }
+avito-mcp-scraper = { workspace = true }
 
 [project.scripts]
 avito-mcp-notify = "avito_mcp_notify.server:main"
