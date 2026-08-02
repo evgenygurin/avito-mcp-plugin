@@ -36,7 +36,7 @@ def main() -> int:
         ".claude-plugin/marketplace.json": _json(
             ".claude-plugin/marketplace.json", "plugins", 0, "version"
         ),
-        "server/pyproject.toml": _toml("server/pyproject.toml", "project", "version"),
+        "servers/gateway/pyproject.toml": _toml("servers/gateway/pyproject.toml", "project", "version"),
         "gemini-extension.json": _json("gemini-extension.json", "version"),
         ".cursor-plugin/plugin.json": _json(".cursor-plugin/plugin.json", "version"),
     }
