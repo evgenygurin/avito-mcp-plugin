@@ -117,11 +117,15 @@ wheels = [
 
 [[package]]
 name = "avito-mcp-db"
-version = "0.1.0"
+version = "0.4.0"
 source = { editable = "db" }
 dependencies = [
+    { name = "avito-mcp-scraper" },
     { name = "avito-mcp-shared" },
     { name = "fastmcp" },
+    { name = "openpyxl" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "sqlalchemy" },
 ]
 
 [package.dev-dependencies]
@@ -130,12 +134,17 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "types-openpyxl" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "avito-mcp-scraper", editable = "scraper" },
     { name = "avito-mcp-shared", editable = "shared" },
     { name = "fastmcp", specifier = ">=3.0.0,<4" },
+    { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -144,6 +153,7 @@ dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "types-openpyxl", specifier = ">=3.1.5.20260518" },
 ]
 
 [[package]]
