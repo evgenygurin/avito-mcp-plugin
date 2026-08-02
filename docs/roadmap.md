@@ -5,6 +5,24 @@
 [спека парсера](superpowers/specs/2026-07-18-avito-parser-design.md).
 Фазы 0–5 ниже — актуальный план реализации (§11 спеки).
 
+## Рефакторинг на ролевые серверы (Фаза 1–5) — выполнено
+
+Архитектура `monolith → gateway + ролевые серверы` реализована (Фазы 1–5,
+по одному issue на фазу). Итог — см.
+[`architecture.md`](architecture.md) и [`servers/README.md`](../servers/README.md).
+
+- [x] **Фаза 1** — scaffold: создан uv-workspace `servers/` (gateway/scraper/db/notify/shared),
+      роли и неймспейсы композиции (`avito_mcp_shared.roles`).
+- [x] **Фаза 2** — движок парсинга перенесён в `servers/scraper` (stateless); gateway
+      композирует его импортом, контракт имён тулз сохранён (#11).
+- [x] **Фаза 3** — storage/экспорт в `servers/db` — единственный stateful-сервер;
+      контракт `record_scan_result`, делегация gateway→db импортом (#13).
+- [x] **Фаза 4** — уведомления в `servers/notify`; `send_notification` проксируется в
+      gateway импортом / чистая композиция (#15).
+- [x] **Фаза 5** — финализирован gateway (7 тулз + неймспейсные `db_*`/`notify_*` +
+      skills по MCP); документация и CI-матрица покрывают все роли + shared (#17).
+      Версии — 0.5.0.
+
 ## Линия A — официальный API (удалена)
 
 Прежняя реализация — тулзы `ping`, `official_api_call`, `get_own_items`,
