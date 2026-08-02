@@ -3,7 +3,6 @@
 from avito_mcp_scraper.models import (
     ExportResult,
     Listing,
-    NotificationResult,
     PriceHistoryResult,
     PricePoint,
     ScanItem,
@@ -101,15 +100,6 @@ class TestExportResult:
         res = ExportResult(format="xlsx", path="/tmp/out.xlsx", count=5)
         assert res.content is None
         assert res.path == "/tmp/out.xlsx"
-
-
-class TestNotificationResult:
-    def test_notification_ok(self) -> None:
-        res = NotificationResult(
-            channel="telegram", sent=True, targets=["123"], detail="ok"
-        )
-        assert res.sent is True
-        assert res.targets == ["123"]
 
 
 def test_proxy_probe_masks_credentials() -> None:
