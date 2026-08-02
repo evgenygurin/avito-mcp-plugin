@@ -31,7 +31,7 @@ def resolve_skills_dir() -> Path | None:
     root = os.environ.get("CLAUDE_PLUGIN_ROOT")
     if root:
         candidates.append(Path(root) / "skills")
-    candidates.append(Path(__file__).resolve().parents[3] / "skills")
+    candidates.append(Path(__file__).resolve().parents[4] / "skills")
 
     for c in candidates:
         if c.is_dir():

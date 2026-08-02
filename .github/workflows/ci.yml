@@ -6,12 +6,16 @@ on:
   pull_request:
 
 jobs:
-  server:
-    name: MCP-сервер (lint + types + tests)
+  servers:
+    name: MCP-серверы (${{ matrix.server }} — lint + types + tests)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [gateway, scraper, db, notify]
     defaults:
       run:
-        working-directory: server
+        working-directory: servers/${{ matrix.server }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,7 +24,7 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Синхронизировать зависимости
+      - name: Синхронизировать зависимости (uv-workspace)
         run: uv sync --dev
 
       - name: ruff check
@@ -32,9 +36,8 @@ jobs:
       - name: mypy
         run: uv run mypy src
 
-      # Тесты хранилища требуют живой Postgres и пропускаются без DSN — это
-      # ожидаемо: подменять Postgres другой СУБД нельзя (диалектный upsert и
-      # timestamptz ведут себя иначе).
+      # Тесты хранилища (gateway) требуют живой Postgres и пропускаются без
+      # DSN — это ожидаемо.
       - name: pytest
         run: uv run pytest -q
 

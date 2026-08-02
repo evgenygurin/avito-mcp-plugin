@@ -1,0 +1,35 @@
+[project]
+name = "avito-mcp-notify"
+version = "0.1.0"
+description = "Notify-сервер avito-mcp (скелет Фазы 1): уведомления (Telegram/VK)"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "evgenygurin", email = "e.a.gurin@outlook.com" }]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+    "avito-mcp-shared",
+]
+
+[tool.uv.sources]
+avito-mcp-shared = { workspace = true }
+
+[project.scripts]
+avito-mcp-notify = "avito_mcp_notify.server:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+[tool.mypy]
+explicit_package_bases = true
+mypy_path = ["src"]

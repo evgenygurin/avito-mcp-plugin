@@ -1,7 +1,7 @@
 [project]
 name = "avito-mcp-server"
 version = "0.2.1"
-description = "MCP-сервер (FastMCP v3) для парсинга публичного каталога Avito"
+description = "Gateway-сервер (FastMCP v3): композиция скаффолдинга avito-mcp + 7 тулз"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -14,7 +14,18 @@ dependencies = [
     "openpyxl>=3.1.5",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.2",
+    # Члены uv-workspace: общие утилиты и скелеты серверов для композиции.
+    "avito-mcp-shared",
+    "avito-mcp-scraper",
+    "avito-mcp-db",
+    "avito-mcp-notify",
 ]
+
+[tool.uv.sources]
+avito-mcp-shared = { workspace = true }
+avito-mcp-scraper = { workspace = true }
+avito-mcp-db = { workspace = true }
+avito-mcp-notify = { workspace = true }
 
 [project.optional-dependencies]
 playwright = ["playwright>=1.40"]
@@ -37,3 +48,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[tool.mypy]
+explicit_package_bases = true
+mypy_path = ["src"]
