@@ -11,7 +11,7 @@
 
 - `.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json` (`plugins[0].version`)
-- `server/pyproject.toml` (`project.version`)
+- `servers/gateway/pyproject.toml` (`project.version`)
 - `gemini-extension.json`
 - `.cursor-plugin/plugin.json`
 
@@ -29,7 +29,7 @@ python3 scripts/check_versions.py     # exit 0 = синхронны
 ## 3. Проверки
 
 ```bash
-cd server
+cd servers/gateway
 uv sync --dev
 uv run ruff check .
 uv run mypy src
@@ -45,8 +45,8 @@ claude plugin validate ./ --strict   # манифесты; скилы этой �
 ## 4. Сборка и публикация MCP-сервера
 
 ```bash
-cd server
-uv build            # sdist + wheel в server/dist/
+cd servers/gateway
+uv build            # sdist + wheel в servers/gateway/dist/
 uv publish          # публикация в PyPI (нужен токен или Trusted Publishing)
 ```
 
@@ -63,7 +63,7 @@ uv publish          # публикация в PyPI (нужен токен или
 
 ```jsonc
 // было (из git):
-{ "command": "uvx", "args": ["--from", "git+https://…#subdirectory=server", "avito-mcp-server"] }
+{ "command": "uvx", "args": ["--from", "git+https://…#subdirectory=servers/gateway", "avito-mcp-server"] }
 // стало (из PyPI):
 { "command": "uvx", "args": ["avito-mcp-server"] }
 ```
@@ -88,7 +88,7 @@ git push origin vX.Y.Z
 
 Версия живёт в **пяти** манифестах и должна меняться во всех сразу:
 `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
-`server/pyproject.toml`, `gemini-extension.json`, `.cursor-plugin/plugin.json`.
+`servers/gateway/pyproject.toml`, `gemini-extension.json`, `.cursor-plugin/plugin.json`.
 Проверка — `python3 scripts/check_versions.py` (сверяет и версии, и имя плагина).
 
 Без бампа `/plugin update` ответит «already at the latest version», даже если код
