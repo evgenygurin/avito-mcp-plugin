@@ -1,0 +1,44 @@
+"""Общий блокирующий пайплайн обхода каталога для тулз поиска и мониторинга.
+
+``search_listings`` и ``scan_new_listings`` расходятся только тем, что делают
+с готовым списком: первая отдаёт его как есть, вторая сверяет с хранилищем.
+Сам сбор — клиент → обход страниц → фильтры — один и тот же, и живёт здесь.
+
+Это и единственная граница мока для обеих тулз: тесты подменяют здесь три
+имени — ``fetch_catalog``, ``build_http_client`` и ``page_pause`` (последнее
+обязательно, иначе прогон реально спит паузу между страницами). См.
+tests/test_tools_search.py и tests/test_tools_monitoring.py.
+"""
+
+from __future__ import annotations
+
+from ..config import build_http_client, page_pause
+from ..filters.filters import FilterSpec, apply_filters
+from ..http.client import fetch_catalog
+from ..models import Listing
+from ..parser import walk_pages
+from ..proxies.proxy import ProxyCooldownStore
+
+
+def collect_listings(
+    url: str,
+    spec: FilterSpec,
+    pages: int,
+    *,
+    cooldown_store: ProxyCooldownStore | None = None,
+) -> list[Listing]:
+    """Обойти каталог и вернуть объявления, прошедшие фильтры.
+
+    Блокирующая функция: вызывается из потока (см. ``tools.execution``).
+
+    Args:
+        cooldown_store: опциональная память о выжженных прокси (DIP-протокол
+            из ``proxies.proxy``). Scraper stateless — по умолчанию ``None``;
+            gateway передаёт своё хранилище, чтобы не терять память о
+            блокировках между запусками (как в монолите).
+    """
+    # with: клиент переиспользует TLS-соединение между страницами и обязан
+    # его отпустить — иначе сокет живёт до сборки мусора (см. HttpClient.close).
+    with build_http_client(budget_scale=pages, cooldown_store=cooldown_store) as client:
+        found = walk_pages(fetch_catalog, client, url, pages, pause=page_pause())
+    return apply_filters(found, spec)

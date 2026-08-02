@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import typing as t
+
 from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
+from avito_mcp_scraper.filters.filters import FilterSpec, PageCount
+from avito_mcp_scraper.models import (
+    Listing,
+    PriceHistoryResult,
+    PricePoint,
+    ScanItem,
+    ScanResult,
+)
+from avito_mcp_scraper.proxies.proxy import ProxyCooldownStore
+from avito_mcp_scraper.tools.catalog import collect_listings
+from avito_mcp_scraper.tools.execution import run_blocking
+from avito_mcp_scraper.utils import extract_listing_id
+
 from ..config import build_storage
-from ..filters.filters import FilterSpec, PageCount
-from ..models import Listing, PriceHistoryResult, PricePoint, ScanItem, ScanResult
 from ..storage import SeenRow
-from ..utils import extract_listing_id
-from .catalog import collect_listings
-from .execution import run_blocking
 
 
 def _changes(listings: list[Listing], seen: dict[int, float | None]) -> list[ScanItem]:
@@ -105,7 +115,15 @@ def register(mcp: FastMCP) -> None:
 
         def _run() -> ScanResult:
             db = build_storage()
-            listings = collect_listings(url, spec, pages)
+            listings = collect_listings(
+                url,
+                spec,
+                pages,
+                # Память о выженных прокси: scraper stateless, но gateway не
+                # хочет терять её между запусками — передаём своё хранилище
+                # (SupabaseStorage реализует и ``ListingStore``, и cooldown).
+                cooldown_store=t.cast(ProxyCooldownStore, db),
+            )
             # Одна выборка на всю страницу вместо запроса на объявление: база
             # облачная, и сотня round-trip'ов занимала больше времени, чем сам
             # парсинг.

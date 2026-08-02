@@ -1,14 +1,20 @@
 [project]
 name = "avito-mcp-scraper"
-version = "0.1.0"
-description = "Scraper-сервер avito-mcp (скелет Фазы 1): парсинг каталога Avito"
+version = "0.3.0"
+description = "Scraper-сервер avito-mcp (stateless): движок парсинга каталога Avito"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "evgenygurin", email = "e.a.gurin@outlook.com" }]
 dependencies = [
     "fastmcp>=3.0.0,<4",
+    "httpx>=0.27",
+    "curl_cffi>=0.7",
+    "beautifulsoup4>=4.12",
     "avito-mcp-shared",
 ]
+
+[project.optional-dependencies]
+playwright = ["playwright>=1.40"]
 
 [tool.uv.sources]
 avito-mcp-shared = { workspace = true }

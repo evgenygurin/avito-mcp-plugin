@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable, Sequence
 
-from avito_mcp_server.proxies.proxy import NoProxy
+from avito_mcp_scraper.proxies.proxy import NoProxy
 from avito_mcp_server.storage import SeenRow
 
 
@@ -90,11 +90,12 @@ class FakeHttpClient:
 
     proxy = NoProxy()
 
-    def __init__(self, budget_scale: int = 1) -> None:
+    def __init__(self, budget_scale: int = 1, cooldown_store: object = None) -> None:
         # Тулзы просят бюджет пропорционально числу страниц — двойник обязан
-        # принимать тот же аргумент, иначе подмена ловит TypeError вместо
-        # проверки поведения.
+        # принимать те же аргументы. Фаза 2: gateway передаёт движку cooldown
+        # (``cooldown_store``), поэтому двойник принимает его молча.
         self.budget_scale = budget_scale
+        self.cooldown_store = cooldown_store
 
     def __enter__(self) -> "FakeHttpClient":
         return self

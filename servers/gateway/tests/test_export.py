@@ -14,7 +14,7 @@ from avito_mcp_server.export.exporter import (
     to_json_str,
     to_xlsx_bytes,
 )
-from avito_mcp_server.models import Listing
+from avito_mcp_scraper.models import Listing
 
 
 @pytest.fixture()

@@ -7,10 +7,10 @@ import os
 from fastmcp import Context, FastMCP
 from mcp.types import ToolAnnotations
 
-from ..models import NotificationResult
+from avito_mcp_scraper.models import NotificationResult
 from ..notifications.sender import NotificationChannel, get_notifier
 from ..notifications.sender import send_notification as do_send
-from .execution import run_blocking
+from avito_mcp_scraper.tools.execution import run_blocking
 
 
 def _resolve_targets(targets: list[str] | None, env_var: str) -> list[str]:

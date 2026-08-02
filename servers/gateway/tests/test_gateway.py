@@ -1,8 +1,9 @@
-"""Тесты композиции gateway (Фаза 1): движок + mount/createProxy на скелеты.
+"""Тесты композиции gateway (Фаза 2): scraper-движок + mount на db/notify.
 
-Проверяют, что gateway видит 7 тулз движка и проксированные инструменты
-скелетов scraper/db/notify под неймспейсами — критерий приёмки «Gateway
-видит все 3 сервера (mount+proxy), тулзы проксируются».
+Gateway видит 7 тулз: 3 из scraper-движка (импорт, те же имена) + 4 gateway
+(мониторинг/экспорт/уведомления), плюс проксированные скелеты db/notify под
+неймспейсами. Scraper больше НЕ монтируется как прокси — его тулзы входят
+в gateway импортом (общий контекст, без IPC-оверхеда).
 """
 
 from fastmcp import Client
@@ -19,7 +20,7 @@ ENGINE_TOOLS = {
     "send_notification",
 }
 
-PROXIED_TOOLS = {"scraper_status", "db_status", "notify_status"}
+PROXIED_TOOLS = {"db_status", "notify_status"}
 
 
 async def test_gateway_hosts_engine_and_proxied_components() -> None:
@@ -33,5 +34,14 @@ async def test_gateway_hosts_engine_and_proxied_components() -> None:
 
 async def test_gateway_proxies_component_call() -> None:
     async with Client(build_gateway()) as client:
-        result = await client.call_tool("scraper_status", {})
-        assert result.data == {"role": "scraper", "status": "ok"}
+        result = await client.call_tool("db_status", {})
+        assert result.data == {"role": "db", "status": "ok"}
+
+
+async def test_gateway_contract_keeps_scraper_tool_names() -> None:
+    # Фаза 2: scraper включается импортом, поэтому имена тулз не неймспейсятся.
+    async with Client(build_gateway()) as client:
+        names = {t.name for t in await client.list_tools()}
+        # Нет «scraper_»-версий поисковых тулз — контракт gateway неизменен.
+        assert "scraper_search_listings" not in names
+        assert "search_listings" in names

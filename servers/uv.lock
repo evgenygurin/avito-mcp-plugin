@@ -179,11 +179,19 @@ dev = [
 
 [[package]]
 name = "avito-mcp-scraper"
-version = "0.1.0"
+version = "0.3.0"
 source = { editable = "scraper" }
 dependencies = [
     { name = "avito-mcp-shared" },
+    { name = "beautifulsoup4" },
+    { name = "curl-cffi" },
     { name = "fastmcp" },
+    { name = "httpx" },
+]
+
+[package.optional-dependencies]
+playwright = [
+    { name = "playwright" },
 ]
 
 [package.dev-dependencies]
@@ -197,8 +205,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "avito-mcp-shared", editable = "shared" },
+    { name = "beautifulsoup4", specifier = ">=4.12" },
+    { name = "curl-cffi", specifier = ">=0.7" },
     { name = "fastmcp", specifier = ">=3.0.0,<4" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "playwright", marker = "extra == 'playwright'", specifier = ">=1.40" },
 ]
+provides-extras = ["playwright"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -210,7 +223,7 @@ dev = [
 
 [[package]]
 name = "avito-mcp-server"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "gateway" }
 dependencies = [
     { name = "avito-mcp-db" },

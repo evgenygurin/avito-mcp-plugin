@@ -4,7 +4,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 
-import avito_mcp_server.tools.catalog as catalog_mod
+import avito_mcp_scraper.tools.catalog as catalog_mod
 import avito_mcp_server.tools.monitoring as mon_mod
 from fakes import FakeHttpClient, FakeStorage
 
@@ -252,7 +252,7 @@ def test_changes_reports_only_real_price_drops(
     prev_price: float | None, price: float | None, expect_reported: bool
 ) -> None:
     # Ядро мониторинга в изоляции: без MCP-клиента и без хранилища.
-    from avito_mcp_server.models import Listing
+    from avito_mcp_scraper.models import Listing
     from avito_mcp_server.tools.monitoring import _changes
 
     items = _changes([Listing(id=1, title="x", price=price)], {1: prev_price})
@@ -263,7 +263,7 @@ def test_changes_reports_only_real_price_drops(
 
 
 def test_changes_marks_unknown_listing_as_new() -> None:
-    from avito_mcp_server.models import Listing
+    from avito_mcp_scraper.models import Listing
     from avito_mcp_server.tools.monitoring import _changes
 
     (item,) = _changes([Listing(id=7, title="x", price=None)], {})
