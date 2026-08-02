@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        server: [gateway, scraper, db, notify]
+        server: [gateway, scraper, db, notify, shared]
     defaults:
       run:
         working-directory: servers/${{ matrix.server }}
@@ -36,8 +36,8 @@ jobs:
       - name: mypy
         run: uv run mypy src
 
-      # Тесты хранилища (gateway) требуют живой Postgres и пропускаются без
-      # DSN — это ожидаемо.
+      # Тесты хранилища (db) требуют живой Postgres и пропускаются без
+      # DSN — это ожидаемо. shared — тесты ролей/неймспейсов.
       - name: pytest
         run: uv run pytest -q
 
