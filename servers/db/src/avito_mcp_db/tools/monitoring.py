@@ -1,8 +1,10 @@
-"""MCP-тулзы db-сервера: персистенция результатов скана и история цены.
+"""MCP-тулзы db-сервера: персистент результата сканирования и история цены.
 
 db — единственный сервер со знанием о БД. Gateway/scraper отдают сырой
 результат сканирования; dedup/seen/история цены пишутся здесь контрактом
-``record_scan_result``.
+``record_scan_result``. Чистые функции (``persist_scan``, ``fetch_history``)
+вынесены в модуль, чтобы gateway мог звать персистент без IPC-оверхеда
+(импортом), оставляя тулзы тонкой обёрткой для внешних MCP-клиентов.
 """
 
 from __future__ import annotations
@@ -59,51 +61,65 @@ def _to_rows(listings: list[Listing]) -> list[SeenRow]:
     ]
 
 
-def register(mcp: FastMCP) -> None:
-    """Зарегистрировать мониторинг-тулзы db (персист + история) на инстансе."""
+def persist_scan(listings: list[Listing]) -> ScanResult:
+    """Записать результат сканирования и вернуть изменения (dedup + цена).
+
+    Чистая функция поверх хранилища: gateway зовёт её из ``scan_new_listings``
+    импортом. Одна выборка на всю пачку вместо запроса на объявление: база
+    облачная, и сотня round-trip'ов дороже самого парсинга.
+    """
+    db = build_storage()
+    seen = db.fetch_seen([listing.id for listing in listings])
+    items = _changes(listings, seen)
+    db.upsert_seen_many(_to_rows(listings))
+    return ScanResult(items=items)
+
+
+def fetch_history(listing_id: str) -> PriceHistoryResult:
+    """История цены объявления (свежая первой). Чистая функция от хранилища."""
+    item_id = extract_listing_id(listing_id)
+    db = build_storage()
+    rows = db.get_price_history(item_id)
+    history = [PricePoint(price=price, seen_at=seen_at) for price, seen_at in rows]
+    return PriceHistoryResult(listing_id=item_id, history=history)
+
+
+def register_record(mcp: FastMCP) -> None:
+    """Зарегистрировать ``record_scan_result`` (внутренний контракт персистента)."""
 
     @mcp.tool(
         annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
-        # Аналог scan_new_listings в gateway — обход каталога идёт там; тут
-        # только запись, но конвейер тоже сетевой (клиент-сторона).
         timeout=900,
     )
     async def record_scan_result(
         listings: list[Listing],
         ctx: Context,
     ) -> ScanResult:
-        """Записать результат сканирования в хранилище и вернуть изменения.
+        """Сырой результат сканирования → записать dedup/seen/историю цены.
 
-        Use when результат ``scan_new_listings`` (сырой список объявлений,
-        собранный gateway/scraper) нужно сверить с хранилищем и сохранить:
-        dedup новых, фиксация снижения цены, история цены. Требует
-        ``AVITO_SUPABASE_DSN``.
+        Внутренний контракт: gateway собирает каталог через scraper и отдаёт
+        сырой список объявлений сюда; db пишет его и возвращает, что изменилось.
+        Требует ``AVITO_SUPABASE_DSN``.
 
         Args:
             listings: список объявлений каталога (без фильтрации по новизне).
         """
         await ctx.info(f"record_scan_result: {len(listings)} listings")
 
-        def _run() -> ScanResult:
-            db = build_storage()
-            # Одна выборка на всю страницу вместо запроса на объявление: база
-            # облачная, и сотня round-trip'ов дороже самого парсинга.
-            seen = db.fetch_seen([listing.id for listing in listings])
-            items = _changes(listings, seen)
-            db.upsert_seen_many(_to_rows(listings))
-            return ScanResult(items=items)
-
         result = await run_blocking(
-            _run,
+            lambda: persist_scan(listings),
             failure="не удалось записать результат сканирования",
             operation="record_scan_result",
             ctx=ctx,
         )
-
         await ctx.info(
             f"записано: {result.new_count} новых, {result.dropped_count} подешевевших"
         )
         return result
+
+
+def register_history(mcp: FastMCP) -> None:
+    """Зарегистрировать ``get_price_history`` (внешний контракт, в т.ч. в gateway)."""
 
     @mcp.tool(
         annotations=ToolAnnotations(
@@ -116,27 +132,22 @@ def register(mcp: FastMCP) -> None:
     ) -> PriceHistoryResult:
         """Получить историю цены объявления из хранилища.
 
-        Use when нужна динамика цены конкретного объявления (было/стало).
         Принимает числовой id объявления Avito или его URL. Возвращает
-        хронологию цены отсортированную от свежей к старой. История
-        появляется только после того, как объявление попадало в
-        ``scan_new_listings``. Требует ``AVITO_SUPABASE_DSN``.
+        хронологию цены от свежей к старой. История появляется после того, как
+        объявление попадало в ``scan_new_listings``. Требует ``AVITO_SUPABASE_DSN``.
         """
-        # extract_listing_id понимает и URL, и голые цифры — отдельной ветки
-        # под каждый вид ввода не нужно.
         item_id = extract_listing_id(listing_id)
         await ctx.info(f"get_price_history: {item_id}")
 
-        def _run() -> PriceHistoryResult:
-            db = build_storage()
-            rows = db.get_price_history(item_id)
-            history = [
-                PricePoint(price=price, seen_at=seen_at) for price, seen_at in rows
-            ]
-            return PriceHistoryResult(listing_id=item_id, history=history)
-
         return await run_blocking(
-            _run,
+            lambda: fetch_history(listing_id),
             failure="не удалось получить историю цены",
             operation="get_price_history",
         )
+
+
+# Псевдоним для обратной совместимости регистрации обоих мониторинг-тулз.
+def register(mcp: FastMCP) -> None:
+    """Зарегистрировать мониторинг-тулз db: запись и историю."""
+    register_record(mcp)
+    register_history(mcp)

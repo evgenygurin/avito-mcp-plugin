@@ -233,20 +233,14 @@ dev = [
 
 [[package]]
 name = "avito-mcp-server"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "gateway" }
 dependencies = [
     { name = "avito-mcp-db" },
     { name = "avito-mcp-notify" },
     { name = "avito-mcp-scraper" },
     { name = "avito-mcp-shared" },
-    { name = "beautifulsoup4" },
-    { name = "curl-cffi" },
     { name = "fastmcp" },
-    { name = "httpx" },
-    { name = "openpyxl" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "sqlalchemy" },
 ]
 
 [package.optional-dependencies]
@@ -260,7 +254,6 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
-    { name = "types-openpyxl" },
 ]
 
 [package.metadata]
@@ -269,14 +262,8 @@ requires-dist = [
     { name = "avito-mcp-notify", editable = "notify" },
     { name = "avito-mcp-scraper", editable = "scraper" },
     { name = "avito-mcp-shared", editable = "shared" },
-    { name = "beautifulsoup4", specifier = ">=4.12" },
-    { name = "curl-cffi", specifier = ">=0.7" },
     { name = "fastmcp", specifier = ">=3.0.0,<4" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "playwright", marker = "extra == 'playwright'", specifier = ">=1.40" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 provides-extras = ["playwright"]
 
@@ -286,7 +273,6 @@ dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
-    { name = "types-openpyxl", specifier = ">=3.1.5.20260518" },
 ]
 
 [[package]]

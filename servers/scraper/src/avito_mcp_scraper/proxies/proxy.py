@@ -18,8 +18,8 @@ class ProxyCooldownStore(Protocol):
     """Память о выжженных прокси между запусками (DIP).
 
     Протокол, а не конкретное хранилище: scraper stateless и не тянет на себя
-    ``gateway.storage``. Gateway-подкладка (``SupabaseStorage``/``FakeStorage``)
-    реализует его структурно и передаёт в ``build_http_client(cooldown_store=…)``.
+    реализацию БД. Бэкенд (БД или тестовый двойник) реализует его структурно
+    и передаёт в ``build_http_client(cooldown_store=…)``.
     """
 
     def mark_proxy_blocked(self, proxy: str) -> None:
