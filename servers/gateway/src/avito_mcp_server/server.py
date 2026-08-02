@@ -2,8 +2,8 @@
 
 Компонует MCP-тулзы: 3 тулзы поиска/чтения/диагностики из scraper-движка
 (stateless) + scan_new_listings (обход scraper → персистент в db) + делегированные
-из db тулзы (get_price_history, export_listings) + send_notification (остаётся
-в gateway до Фазы 4) и раздачу ``skills/`` по MCP. См. docs/mcp-server.md.
+из db тулзы (get_price_history, export_listings) + делегированная из notify тулза
+уведомления и раздачу ``skills/`` по MCP. См. docs/mcp-server.md.
 """
 
 from __future__ import annotations
@@ -15,8 +15,12 @@ from avito_mcp_scraper.tools import diagnostics, listings, search
 from avito_mcp_db.tools import exporting as db_exporting
 from avito_mcp_db.tools.monitoring import register_history
 
+# Тудза уведомлений приходит из notify (прокси импортом): gateway
+# не знает про каналы/конфиг уведомлений — только композирует.
+from avito_mcp_notify import tools as notify_tools
+
 from .skills_provider import register_skills
-from .tools import monitoring, notifications
+from .tools import monitoring
 
 # До регистрации тулз: иначе диагностика самой сборки (список прокси из
 # кабинета, подъём кук из кэша) осталась бы невидимой. Каждый вызов тулзы —
@@ -41,8 +45,8 @@ def register_all(gw: FastMCP) -> None:
     register_history(gw)
     db_exporting.register(gw)
 
-    # Уведомления остаются в gateway (Фаза 4 её переносит в notify).
-    notifications.register(gw)
+    # Уведомления делегируются в notify (Фаза 4): gateway чистый композитор.
+    notify_tools.register(gw)
 
     # Раздача skills/ по MCP (skill://<name>/…) — любому MCP-клиенту.
     # graceful: если каталог skills/ не найден, сервер работает без раздачи.
